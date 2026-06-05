@@ -1,3 +1,5 @@
+![Cast to Figma](assets/scheme.png)
+
 # Cast to Figma Agent Skill
 
 Agent skill for using the [Cast to Figma CLI](https://github.com/newfiction/cast-to-figma-cli) from coding-agent harnesses.
