@@ -1,8 +1,10 @@
 # Cast to Figma Skill
 
-Agent skill for using [Cast to Figma](https://github.com/newfiction/cast-to-figma) from coding-agent harnesses.
+Agent skill for using [Cast to Figma CLI](https://github.com/newfiction/cast-to-figma-cli) from coding-agent harnesses.
 
-This repo contains the skill instructions only. Install the CLI separately.
+This repo contains the skill instructions only. Install the CLI and Figma plugin separately.
+
+Figma plugin: https://www.figma.com/community/plugin/1398410342518853126
 
 ## Requirements
 
@@ -23,7 +25,7 @@ For regular agent work, global install is recommended because agents call the CL
 Clone this repo into your agent skills directory:
 
 ```bash
-git clone https://github.com/newfiction/cast-to-figma-skill ~/.agents/skills/cast-to-figma
+git clone https://github.com/newfiction/cast-to-figma ~/.agents/skills/cast-to-figma
 ```
 
 If your harness uses another skill directory, clone it there instead.
@@ -48,8 +50,9 @@ cliBinary: "cast-to-figma"
 
 ## Links
 
-- CLI repo: https://github.com/newfiction/cast-to-figma
+- CLI repo: https://github.com/newfiction/cast-to-figma-cli
 - npm package: https://www.npmjs.com/package/@newfiction/cast-to-figma
+- Figma plugin: https://www.figma.com/community/plugin/1398410342518853126
 
 ## License
 
