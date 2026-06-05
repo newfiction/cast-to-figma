@@ -8,43 +8,22 @@ Cast lets AI agents inspect, generate, and edit designs using the context of you
 
 ## Install
 
-### 1. Install the Figma plugin
+### 1. Open the Figma plugin
 
-Install and open the Cast plugin in Figma Desktop:
+Install and open the [Cast plugin](https://www.figma.com/community/plugin/1398410342518853126) in Figma Desktop.
 
-https://www.figma.com/community/plugin/1398410342518853126
-
-### 2. Install the CLI
+### 2. Install the CLI & skill
 
 ```bash
 npm install -g github:newfiction/cast-to-figma
-```
-
-### 3. Install the agent skill
-
-Use your agent's skill folder:
-
-```bash
 cast-to-figma install-skill --folder {agent_skill_folder}
 ```
 
-Examples:
+`{agent_skill_folder}` stands for agent skills, e.g:
 
 ```bash
+npm install -g github:newfiction/cast-to-figma
 cast-to-figma install-skill --folder ~/.claude/skills
-cast-to-figma install-skill --folder ~/.agents/skills
-```
-
-One-line Claude Code setup:
-
-```bash
-npm install -g github:newfiction/cast-to-figma && cast-to-figma install-skill --folder ~/.claude/skills
-```
-
-Generic one-line setup:
-
-```bash
-npm install -g github:newfiction/cast-to-figma && cast-to-figma install-skill --folder ~/.agents/skills
 ```
 
 ## Usage
@@ -83,7 +62,7 @@ CAST_BRIDGE_PORT=7778 cast-to-figma status
 - `install-skill --folder {agent_skill_folder}` — install the bundled skill into an agent skill folder
 - `debug` — developer probe
 
-Run help:
+### Help
 
 ```bash
 cast-to-figma help
