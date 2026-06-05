@@ -19,7 +19,7 @@ npm install -g github:newfiction/cast-to-figma
 cast-to-figma install-skill --folder {agent_skill_folder}
 ```
 
-`{agent_skill_folder}` stands for agent skills, e.g:
+`{agent_skill_folder}` stands for agent skills reference folder, e.g:
 
 ```bash
 npm install -g github:newfiction/cast-to-figma
