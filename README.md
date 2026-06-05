@@ -28,7 +28,7 @@ cast-to-figma install-skill --folder ~/.claude/skills
 
 ## Usage
 
-![[scheme.png]]
+![Cast workflow](assets/scheme.png)
 
 ```bash
 cast-to-figma status
