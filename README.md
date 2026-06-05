@@ -28,6 +28,8 @@ cast-to-figma install-skill --folder ~/.claude/skills
 
 ## Usage
 
+![[scheme.png]]
+
 ```bash
 cast-to-figma status
 cast-to-figma ping
