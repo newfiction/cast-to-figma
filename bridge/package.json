@@ -1,0 +1,11 @@
+{
+  "name": "cast-figma-bridge",
+  "private": true,
+  "scripts": {
+    "start": "node cast-server.js",
+    "check": "node --check cast-server.js"
+  },
+  "dependencies": {
+    "ws": "^8.21.0"
+  }
+}

@@ -1,0 +1,249 @@
+#!/usr/bin/env node
+
+/**
+ * Watches Cast bridge events and turns designer-idle change cycles into
+ * deterministic agent actions.
+ * Use --json to print raw event JSON lines for machine consumers.
+ * Use --idle-timeout=N to stop after N seconds without events (default: 5; disabled for --once).
+ * Use --no-idle-timeout for the old blocking behavior.
+ */
+const { spawnSync } = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const ROOT = path.resolve(__dirname, '..');
+const ENSURE = path.join(ROOT, 'bridge', 'ensure.sh');
+const argv = process.argv.slice(2);
+
+/** Prints watch usage. */
+function usage() {
+  console.log(`Cast watch
+
+Usage:
+  cast-to-figma watch [--instruction TEXT] [--idle-timeout N]
+
+Options:
+  --instruction TEXT      Instruction to apply on designer change cycles
+  --once                  Stop after the first event batch
+  --json                  Print raw JSON events
+  --timeout N             Stop after N seconds total (default for --once: 600)
+  --idle-timeout N        Stop after N seconds without activity (default: 5)
+  --no-idle-timeout       Keep watching until cancelled/disconnected
+  --no-ensure             Do not auto-start the bridge
+`);
+}
+
+/** Returns an option value from either --name=value or --name value syntax. */
+function optionValue(name) {
+  const withEquals = argv.find((arg) => arg.startsWith(`${name}=`));
+  if (withEquals) return withEquals.slice(name.length + 1);
+  const index = argv.indexOf(name);
+  return index >= 0 ? argv[index + 1] : undefined;
+}
+
+if (argv.includes('--help') || argv.includes('-h') || argv.includes('help')) {
+  usage();
+  process.exit(0);
+}
+
+const bridgePort = process.env.CAST_BRIDGE_PORT || process.env.BRIDGE_PORT || '7777';
+const bridge = process.env.CAST_BRIDGE_URL || `http://127.0.0.1:${bridgePort}`;
+const intervalMs = Number(process.env.CAST_WATCH_INTERVAL_MS || 1000);
+const once = argv.includes('--once');
+const rawJson = argv.includes('--json');
+const timeoutValue = optionValue('--timeout');
+const idleTimeoutValue = optionValue('--idle-timeout');
+const timeoutArg = timeoutValue === undefined ? undefined : `--timeout=${timeoutValue}`;
+const idleTimeoutArg = idleTimeoutValue === undefined ? undefined : `--idle-timeout=${idleTimeoutValue}`;
+const noIdleTimeout = argv.includes('--no-idle-timeout');
+const instruction = optionValue('--instruction');
+const defaultTimeoutSeconds = once ? 600 : 0;
+const timeoutSeconds = timeoutValue === undefined ? defaultTimeoutSeconds : Number(timeoutValue);
+const defaultIdleTimeoutSeconds = once || noIdleTimeout ? 0 : Number(process.env.CAST_WATCH_IDLE_TIMEOUT_SECONDS || 5);
+const idleTimeoutSeconds = idleTimeoutValue === undefined ? defaultIdleTimeoutSeconds : Number(idleTimeoutValue);
+const timeoutMs = timeoutSeconds > 0 ? timeoutSeconds * 1000 : 0;
+const idleTimeoutMs = idleTimeoutSeconds > 0 ? idleTimeoutSeconds * 1000 : 0;
+const startedAt = Date.now();
+let lastWorkAt = Date.now();
+
+/** Sleeps for the given number of milliseconds. */
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Starts the bridge unless disabled by the caller. */
+function ensureBridge() {
+  if (argv.includes('--no-ensure')) return;
+  spawnSync(ENSURE, { stdio: 'ignore' });
+}
+
+/** Returns whether the Cast plugin is currently connected. */
+async function connected() {
+  const res = await fetch(`${bridge}/status`);
+  if (!res.ok) return false;
+  const json = await res.json();
+  return !!json.connected;
+}
+
+/** Tells the bridge the watching state (and optional instruction) so the plugin watch brain can react. */
+async function setWatching(state) {
+  try {
+    await fetch(`${bridge}/watch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ state, instruction: state === 'start' ? instruction : undefined }),
+    });
+  } catch (_) { /* bridge may be down; ignore */ }
+}
+
+/** Returns whether the user cancelled watching from the Cast plugin. */
+async function watchCancelled() {
+  try {
+    const res = await fetch(`${bridge}/watch-cancel`);
+    if (!res.ok) return false;
+    const json = await res.json();
+    return !!json.cancel;
+  } catch (_) { return false; }
+}
+
+/** Saves JSON data and returns its artifact path. */
+function saveArtifact(prefix, value) {
+  const dir = path.join(os.tmpdir(), 'cast-artifacts');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+  fs.writeFileSync(file, JSON.stringify(value, null, 2));
+  return file;
+}
+
+/** Returns the plugin-classified watch plan from a bridge event. */
+function getPlan(event) {
+  return event && event.type === 'watch-plan' ? event.plan : undefined;
+}
+
+/** Returns a shell-safe restart command preserving watcher settings. */
+function restartCommand() {
+  const args = [];
+  if (instruction) args.push(`--instruction=${JSON.stringify(instruction)}`);
+  if (timeoutArg) args.push(timeoutArg);
+  if (idleTimeoutArg) args.push(idleTimeoutArg);
+  if (noIdleTimeout) args.push('--no-idle-timeout');
+  return `${__filename}${args.length ? ` ${args.join(' ')}` : ''}`;
+}
+
+/**
+ * Prints the deterministic required agent actions for one change cycle. The plan is
+ * classified by the plugin watch brain (single source of truth, supervision first then
+ * instruction); the CLI only renders it for the external agent.
+ */
+async function maybePrintAction(event) {
+  if (rawJson) {
+    process.stdout.write(`${JSON.stringify(event)}\n`);
+    return once;
+  }
+
+  const plan = getPlan(event);
+  if (!plan) {
+    process.stdout.write(`Cast event: ${event.type || 'unknown'}\n`);
+    return false;
+  }
+
+  const eventFile = saveArtifact('watch-plan', event);
+
+  if (plan.idle) {
+    process.stdout.write(`Change cycle: ${plan.changeCount} changes; selection: ${plan.selection || 'none'}\n`);
+    process.stdout.write(`event: ${eventFile}\n`);
+    process.stdout.write('No supervision or instruction. Continuing to watch.\n');
+    return once;
+  }
+
+  if (plan.hasBacklog && plan.hasInstruction) process.stdout.write('Designer supervision and instruction are ready.\n');
+  else if (plan.hasBacklog) process.stdout.write('Designer supervision detected.\n');
+  else process.stdout.write('Designer changes detected. Instruction is ready to apply.\n');
+  process.stdout.write(`Change cycle: ${plan.changeCount} changes; selection: ${plan.selection || 'none'}\n`);
+  process.stdout.write(`event: ${eventFile}\n`);
+  if (Array.isArray(plan.inspectTargets) && plan.inspectTargets.length > 0) {
+    process.stdout.write('inspect changed layers first:\n');
+    for (const target of plan.inspectTargets) {
+      if (!target?.id) continue;
+      const label = target.name ? ` # ${target.name}` : '';
+      process.stdout.write(`  cast-to-figma inspect --agent <agent-id> --node-id ${JSON.stringify(target.id)} --depth 3 --scale 1${label}\n`);
+    }
+  }
+  if (plan.hasBacklog) process.stdout.write('supervision: read with `cast get-supervision`\n');
+  if (plan.hasInstruction) process.stdout.write(`instruction: ${event.instruction || instruction}\n`);
+
+  process.stdout.write('\nRequired agent actions:\n');
+  let step = 1;
+  for (const action of Array.isArray(plan.steps) ? plan.steps : []) {
+    process.stdout.write(`${step++}. ${action}\n`);
+  }
+  process.stdout.write(`${step++}. Restart watch:\n   ${restartCommand()}\n`);
+  return true;
+}
+
+/** Polls queued Cast events once. Returns { count, stop }. */
+async function poll() {
+  const res = await fetch(`${bridge}/events`);
+  if (!res.ok) throw new Error(`GET /events failed: ${res.status}`);
+  const json = await res.json();
+  const events = Array.isArray(json.events) ? json.events : [];
+  for (const event of events) {
+    const stop = await maybePrintAction(event);
+    if (stop) return { count: events.length, stop: true };
+  }
+  return { count: events.length, stop: false };
+}
+
+/** Returns true when the watcher should stop because total timeout elapsed. */
+function timedOut() {
+  return timeoutMs > 0 && Date.now() - startedAt >= timeoutMs;
+}
+
+/** Returns true when the watcher should stop because no work happened recently. */
+function idleTimedOut() {
+  return idleTimeoutMs > 0 && Date.now() - lastWorkAt >= idleTimeoutMs;
+}
+
+/** Runs the watcher loop. */
+async function loop() {
+  while (!timedOut()) {
+    try {
+      if (!(await connected())) {
+        process.stderr.write('Cast plugin disconnected. Stopped watching.\n');
+        return;
+      }
+      if (await watchCancelled()) {
+        process.stderr.write('Watching cancelled from the Cast plugin.\n');
+        return;
+      }
+      const { count, stop } = await poll();
+      if (count > 0) lastWorkAt = Date.now();
+      if (stop) return;
+      if (once && count > 0) return;
+      if (idleTimedOut()) {
+        process.stderr.write(`No Cast activity for ${idleTimeoutSeconds}s. Stopped watching.\n`);
+        return;
+      }
+    } catch (error) {
+      process.stderr.write(`[watch] ${String(error)}\n`);
+      if (once) process.exitCode = 1;
+    }
+    await sleep(intervalMs);
+  }
+}
+
+/** Runs the watcher with bridge watching-state lifecycle. */
+async function main() {
+  ensureBridge();
+  process.stderr.write(`Watching Figma for designer changes${instruction ? ` with instruction: ${instruction}` : ''}…\n`);
+  process.stderr.write('Cancel watching to converse or give a new instruction.\n');
+  await setWatching('start');
+  try {
+    await loop();
+  } finally {
+    await setWatching('stop');
+  }
+}
+
+main();

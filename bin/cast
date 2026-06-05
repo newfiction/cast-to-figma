@@ -1,0 +1,362 @@
+#!/usr/bin/env node
+
+/**
+ * Human-readable Cast CLI wrapper around the local HTTP bridge.
+ */
+const { spawnSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+const ROOT = path.resolve(__dirname, '..');
+const ENSURE = path.join(ROOT, 'bridge', 'ensure.sh');
+const WATCH = path.join(ROOT, 'bin', 'watch');
+const TOOL_LABELS = {
+  done: {
+    status: 'Checked bridge status',
+    ping: 'Connected to Figma',
+    'list-pages': 'Listed pages',
+    'get-skill': 'Read file skill',
+    'update-skill': 'Updated file skill',
+    'get-memory': 'Read memory',
+    'clear-memory': 'Cleared memory',
+    'clear-chat': 'Cleared chat',
+    'get-supervision': 'Read supervision',
+    'clear-supervision-backlog': 'Cleared supervision backlog',
+    'clear-supervision': 'Cleared supervision',
+    inspect: 'Inspected selection',
+    'update-properties': 'Updated properties',
+    'resize-node': 'Resized node',
+    'update-fills': 'Updated fills',
+    'update-text': 'Updated text',
+    'set-layout': 'Updated layout',
+    'create-node': 'Created node',
+    'move-node': 'Moved node',
+    'delete-node': 'Deleted node',
+    'select-node': 'Selected node',
+    undo: 'Undid last operation',
+    'run-script': 'Ran script',
+    'list-user-tools': 'Listed user tools',
+    'get-user-tools': 'Loaded user tools',
+    'get-user-tool': 'Loaded user tool',
+    'add-user-tool': 'Added user tool',
+    'edit-user-tool': 'Edited user tool',
+    'delete-user-tool': 'Deleted user tool',
+    'run-user-tool': 'Ran user tool',
+    debug: 'Ran debug probe',
+    'install-skill': 'Installed Cast agent skill',
+    exec: 'Ran tool',
+  },
+};
+const BRIDGE_PORT = process.env.CAST_BRIDGE_PORT || process.env.BRIDGE_PORT || '7777';
+const BRIDGE = process.env.CAST_BRIDGE_URL || `http://127.0.0.1:${BRIDGE_PORT}`;
+const INSPECT_INLINE_LIMIT_BYTES = Number(process.env.CAST_INSPECT_INLINE_LIMIT_BYTES || 750000);
+
+const COMMANDS = new Map([
+  ['status', 'status'],
+  ['ping', 'ping'],
+  ['list-pages', 'list-pages'],
+  ['get-skill', 'get-skill'],
+  ['update-skill', 'update-skill'],
+  ['get-memory', 'get-memory'],
+  ['clear-memory', 'clear-memory'],
+  ['clear-chat', 'clear-chat'],
+  ['get-supervision', 'get-supervision'],
+  ['clear-supervision-backlog', 'clear-supervision-backlog'],
+  ['clear-supervision', 'clear-supervision'],
+  ['inspect', 'inspect'],
+  ['update-properties', 'update-properties'],
+  ['resize-node', 'resize-node'],
+  ['update-fills', 'update-fills'],
+  ['update-text', 'update-text'],
+  ['set-layout', 'set-layout'],
+  ['create-node', 'create-node'],
+  ['move-node', 'move-node'],
+  ['delete-node', 'delete-node'],
+  ['select-node', 'select-node'],
+  ['undo', 'undo'],
+  ['run-script', 'run-script'],
+  ['list-user-tools', 'list-user-tools'],
+  ['get-user-tools', 'get-user-tools'],
+  ['get-user-tool', 'get-user-tool'],
+  ['add-user-tool', 'add-user-tool'],
+  ['edit-user-tool', 'edit-user-tool'],
+  ['delete-user-tool', 'delete-user-tool'],
+  ['run-user-tool', 'run-user-tool'],
+  ['debug', 'debug'],
+  ['install-skill', 'install-skill'],
+  ['exec', 'exec'],
+  ['watch', 'watch'],
+]);
+
+/** Prints usage. */
+function usage() {
+  console.log(`Cast CLI
+
+Usage:
+  cast-to-figma status
+  cast-to-figma inspect [--node-id ID] [--node-url URL] [--depth N] [--scale N] [--no-inline-screenshot]
+  cast-to-figma get-skill
+  cast-to-figma get-memory [--limit N]
+  cast-to-figma get-supervision
+  cast-to-figma update-skill --skill-md-file FILE
+  cast-to-figma update-text --node-id ID --text TEXT [--font-size N]
+  cast-to-figma get-user-tools
+  cast-to-figma add-user-tool --manifest-file FILE --source-file FILE
+  cast-to-figma edit-user-tool --tool-id ID [--manifest-file FILE] [--source-file FILE]
+  cast-to-figma delete-user-tool --tool-id ID
+  cast-to-figma run-user-tool --tool-id ID --node-id ID [--params JSON]
+  cast-to-figma exec --tool TOOL [--data JSON]
+  cast-to-figma watch [--instruction TEXT]
+  cast-to-figma install-skill --folder {agent_skill_folder}
+
+Common options:
+  --agent ID       Agent id shown in Figma (default: cli)
+  --json           Print raw JSON result
+  --no-ensure      Do not auto-start the bridge
+`);
+}
+
+/** Parses simple CLI args. */
+function parse(argv) {
+  const opts = { _: [] };
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (!arg.startsWith('--')) {
+      opts._.push(arg);
+      continue;
+    }
+    const key = arg.slice(2);
+    if (key === 'json' || key === 'no-ensure' || key === 'inline-screenshot' || key === 'no-inline-screenshot') {
+      opts[key] = true;
+      continue;
+    }
+    opts[key] = argv[i + 1];
+    i += 1;
+  }
+  return opts;
+}
+
+/** Expands a leading home-directory marker in a CLI path. */
+function expandHome(filePath) {
+  if (!filePath) return filePath;
+  if (filePath === '~') return process.env.HOME || filePath;
+  if (filePath.startsWith('~/')) return path.join(process.env.HOME || '', filePath.slice(2));
+  return filePath;
+}
+
+/** Copies bundled skill files into an agent skill folder. */
+function installSkill(opts) {
+  const agentSkillFolder = path.resolve(expandHome(opts.folder || path.join(process.env.HOME || '.', '.agents', 'skills')));
+  const target = path.join(agentSkillFolder, 'cast-to-figma');
+  const files = ['SKILL.md', 'README.md', 'LICENSE', path.join('assets', 'cover.png'), path.join('assets', 'scheme.png')];
+
+  fs.mkdirSync(target, { recursive: true });
+  for (const relativePath of files) {
+    const source = path.join(ROOT, relativePath);
+    if (!fs.existsSync(source)) continue;
+    const destination = path.join(target, relativePath);
+    if (path.resolve(source) === path.resolve(destination)) continue;
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.copyFileSync(source, destination);
+  }
+
+  return {
+    label: `Installed Cast skill to ${target}`,
+    agentSkillFolder,
+    target,
+    files: files.filter((relativePath) => fs.existsSync(path.join(ROOT, relativePath))),
+  };
+}
+
+/** Converts CLI options to Cast tool data. */
+function buildData(tool, opts) {
+  if (tool === 'exec') return { tool: opts.tool, data: opts.data ? JSON.parse(opts.data) : {} };
+  if (opts.data) return JSON.parse(opts.data);
+  const data = {};
+  if (opts['node-id']) data.nodeId = opts['node-id'];
+  if (opts['node-url']) data.nodeUrl = opts['node-url'];
+  if (opts.depth) data.depth = Number(opts.depth);
+  if (opts.scale) data.scale = Number(opts.scale);
+  if (opts.mode) data.mode = opts.mode;
+  if (opts.text) data.text = opts.text;
+  if (opts['font-size']) data.fontSize = Number(opts['font-size']);
+  if (opts.name) data.name = opts.name;
+  if (opts.x) data.x = Number(opts.x);
+  if (opts.y) data.y = Number(opts.y);
+  if (opts.width) data.width = Number(opts.width);
+  if (opts.height) data.height = Number(opts.height);
+  if (opts.opacity) data.opacity = Number(opts.opacity);
+  if (opts.visible) data.visible = opts.visible !== 'false';
+  if (opts.rotation) data.rotation = Number(opts.rotation);
+  if (opts.index) data.index = Number(opts.index);
+  if (opts.parentId || opts['parent-id']) data.parentId = opts.parentId || opts['parent-id'];
+  if (opts.type) data.type = opts.type;
+  if (opts['layout-mode']) data.layoutMode = opts['layout-mode'];
+  if (opts['primary-axis-sizing-mode']) data.primaryAxisSizingMode = opts['primary-axis-sizing-mode'];
+  if (opts['counter-axis-sizing-mode']) data.counterAxisSizingMode = opts['counter-axis-sizing-mode'];
+  if (opts['primary-axis-align-items']) data.primaryAxisAlignItems = opts['primary-axis-align-items'];
+  if (opts['counter-axis-align-items']) data.counterAxisAlignItems = opts['counter-axis-align-items'];
+  if (opts['padding-top']) data.paddingTop = Number(opts['padding-top']);
+  if (opts['padding-right']) data.paddingRight = Number(opts['padding-right']);
+  if (opts['padding-bottom']) data.paddingBottom = Number(opts['padding-bottom']);
+  if (opts['padding-left']) data.paddingLeft = Number(opts['padding-left']);
+  if (opts['item-spacing']) data.itemSpacing = Number(opts['item-spacing']);
+  if (opts.source) data.source = opts.source;
+  if (opts['source-file']) data.source = fs.readFileSync(opts['source-file'], 'utf8');
+  if (opts.reason) data.reason = opts.reason;
+  if (opts['tool-id']) data.toolId = opts['tool-id'];
+  if (opts.params) data.params = JSON.parse(opts.params);
+  if (opts.manifest) data.manifest = JSON.parse(opts.manifest);
+  if (opts['manifest-file']) data.manifest = JSON.parse(fs.readFileSync(opts['manifest-file'], 'utf8'));
+  if (opts.limit) data.limit = Number(opts.limit);
+  if (opts['skill-md']) data.skillMd = opts['skill-md'];
+  if (opts['skill-md-file']) data.skillMd = fs.readFileSync(opts['skill-md-file'], 'utf8');
+  return data;
+}
+
+/** Starts bridge when needed. */
+function ensure(opts) {
+  if (opts['no-ensure']) return;
+  spawnSync(ENSURE, { stdio: 'ignore' });
+}
+
+/** Calls Cast HTTP API. */
+async function call(tool, data, agent) {
+  if (tool === 'status') {
+    const res = await fetch(`${BRIDGE}/status`);
+    return res.json();
+  }
+  const castTool = tool === 'exec' ? data.tool : tool;
+  const castData = tool === 'exec' ? (data.data || {}) : data;
+  const res = await fetch(`${BRIDGE}/exec`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tool: castTool, agent, data: castData }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const detail = json.detail ? ` — ${json.detail}` : '';
+    const hint = json.hint ? ` (${json.hint})` : '';
+    throw new Error(`${json.error || `Cast request failed: ${res.status}`}${detail}${hint}`);
+  }
+  return json;
+}
+
+/** Returns one-line summary. */
+function summary(tool, result) {
+  if (tool === 'status') {
+    const suffix = result.port ? ` on port ${result.port}` : '';
+    return result.connected ? `Cast plugin connected${suffix}` : `Cast plugin not connected${suffix}`;
+  }
+  if (result && typeof result.label === 'string') return result.label;
+  return TOOL_LABELS.done[tool] || `Ran ${tool}`;
+}
+
+/** Returns screenshot artifacts discovered in an inspect result. */
+function screenshotArtifacts(result) {
+  if (Array.isArray(result.nodes)) {
+    return result.nodes
+      .map((entry, index) => ({ index, path: entry.screenshotPath, node: entry.node }))
+      .filter((entry) => entry.path);
+  }
+  return result.screenshotPath ? [{ index: 0, path: result.screenshotPath, node: result.node }] : [];
+}
+
+/** Builds a rerun hint for smaller inspect screenshots. */
+function smallerScreenshotHint(opts) {
+  const currentScale = Number(opts.scale || 1);
+  const nextScale = Math.max(0.1, Math.round((currentScale * 0.5) * 100) / 100);
+  const target = opts['node-id'] ? ` --node-id ${opts['node-id']}` : opts['node-url'] ? ` --node-url ${opts['node-url']}` : '';
+  const depth = opts.depth ? ` --depth ${opts.depth}` : '';
+  return `cast inspect${target}${depth} --scale ${nextScale}`;
+}
+
+/** Attaches inline visual artifact data to inspect results when safe. */
+function attachVisualArtifacts(result, opts) {
+  const artifacts = screenshotArtifacts(result).map((artifact) => {
+    const visual = {
+      type: 'image/png',
+      path: artifact.path,
+      required: true,
+      contract: 'VISUAL_CHECK_REQUIRED: inspect this screenshot before making visual edits.',
+    };
+    try {
+      const stat = fs.statSync(artifact.path);
+      visual.bytes = stat.size;
+      if (!opts['no-inline-screenshot'] && stat.size <= INSPECT_INLINE_LIMIT_BYTES) {
+        visual.dataUrl = `data:image/png;base64,${fs.readFileSync(artifact.path).toString('base64')}`;
+      } else if (!opts['no-inline-screenshot']) {
+        visual.tooLarge = true;
+        visual.hint = `Screenshot data is ${stat.size} bytes and may be truncated. Rerun with smaller scale: ${smallerScreenshotHint(opts)}`;
+      }
+    } catch (error) {
+      visual.error = `Unable to read screenshot artifact: ${error.message || String(error)}`;
+    }
+    return visual;
+  });
+
+  if (artifacts.length > 0) result.visualArtifacts = artifacts;
+  return result;
+}
+
+/** Prints readable result. */
+function printHuman(tool, result) {
+  console.log(`Cast ${tool}`);
+  console.log(`✓ ${summary(tool, result)}`);
+
+  const node = result.node || result.nodes?.[0]?.node || result;
+  if (node && node.id && node.name) console.log(`node: ${node.type || 'NODE'} ${node.id} “${node.name}”`);
+  if (node && node.width && node.height) console.log(`size: ${Math.round(node.width)} × ${Math.round(node.height)}`);
+  const screenshotPath = result.screenshotPath || result.nodes?.[0]?.screenshotPath;
+  if (screenshotPath) console.log(`screenshot: ${screenshotPath}`);
+  if (tool === 'inspect' && Array.isArray(result.visualArtifacts) && result.visualArtifacts.length > 0) {
+    console.log('VISUAL_CHECK_REQUIRED');
+    console.log('You must inspect the screenshot before making visual edits.');
+    for (const artifact of result.visualArtifacts) {
+      console.log('visualArtifact:');
+      console.log(`  type: ${artifact.type}`);
+      console.log(`  path: ${artifact.path}`);
+      if (artifact.bytes) console.log(`  bytes: ${artifact.bytes}`);
+      if (artifact.dataUrl) console.log(`  dataUrl: ${artifact.dataUrl}`);
+      if (artifact.tooLarge) console.log('VISUAL_ARTIFACT_TOO_LARGE');
+      if (artifact.hint) console.log(`  hint: ${artifact.hint}`);
+      if (artifact.error) console.log(`  error: ${artifact.error}`);
+    }
+  }
+  if (result.pageName) console.log(`page: ${result.pageName}`);
+  if (Array.isArray(result.pages)) console.log(`pages: ${result.pages.map((p) => p.name).join(', ')}`);
+  if (Array.isArray(result.tools)) console.log(`tools: ${result.tools.map((t) => t.id || t.name).join(', ') || '(none)'}`);
+  if (result.contextMd) console.log(`\n${result.contextMd}`);
+}
+
+/** Main CLI entrypoint. */
+async function main() {
+  const opts = parse(process.argv.slice(2));
+  const command = opts._[0];
+  if (!command || command === 'help' || command === '--help') {
+    usage();
+    return;
+  }
+  if (!COMMANDS.has(command)) throw new Error(`Unknown Cast command: ${command}`);
+  if (command === 'watch') {
+    const child = spawnSync(WATCH, process.argv.slice(3), { stdio: 'inherit' });
+    process.exit(child.status === null ? 1 : child.status);
+  }
+  if (command === 'install-skill') {
+    const result = installSkill(opts);
+    if (opts.json) console.log(JSON.stringify(result, null, 2));
+    else printHuman(command, result);
+    return;
+  }
+  ensure(opts);
+  const data = buildData(command, opts);
+  const result = await call(command, data, opts.agent || 'cli');
+  const output = command === 'inspect' ? attachVisualArtifacts(result, opts) : result;
+  if (opts.json) console.log(JSON.stringify(output, null, 2));
+  else printHuman(command, output);
+}
+
+main().catch((error) => {
+  console.error(`Cast error: ${error.message || String(error)}`);
+  process.exit(1);
+});

@@ -1,52 +1,97 @@
-![Cast to Figma](assets/scheme.png)
+![Cast to Figma](assets/cover.png)
 
-# Cast to Figma Agent Skill
+# Cast to Figma
 
-Agent skill for using the [Cast to Figma CLI](https://github.com/newfiction/cast-to-figma-cli) from coding-agent harnesses.
+Local CLI, bridge, and agent skill for controlling Figma through the [Cast Figma plugin](https://www.figma.com/community/plugin/1398410342518853126).
 
-This repo contains the skill instructions only. Install the CLI and Figma plugin separately.
+Cast lets AI agents inspect, generate, and edit designs using the context of your actual Figma file — including your edits, corrections, naming patterns, layout habits, and file-specific conventions.
 
-## Requirements
+## Install
 
-1. **Figma plugin**  
-   Install and open the Cast plugin in Figma Desktop:  
-   https://www.figma.com/community/plugin/1398410342518853126
+### 1. Install the Figma plugin
 
-2. **CLI**  
-   Install the Cast CLI:
+Install and open the Cast plugin in Figma Desktop:
 
-   ```bash
-   npm install -g @newfiction/cast-to-figma
-   ```
+https://www.figma.com/community/plugin/1398410342518853126
 
-   Try without global install:
-
-   ```bash
-   npx -y @newfiction/cast-to-figma status
-   ```
-
-   For regular agent work, global install is recommended because agents call the CLI repeatedly.
-
-## Install the skill
-
-Clone this repo into your agent skills directory:
+### 2. Install the CLI
 
 ```bash
-git clone https://github.com/newfiction/cast-to-figma ~/.agents/skills/cast-to-figma
+npm install -g github:newfiction/cast-to-figma
 ```
 
-If your harness uses another skill directory, clone it there instead.
+### 3. Install the agent skill
 
-## Update the skill
+Use your agent's skill folder:
 
 ```bash
-cd ~/.agents/skills/cast-to-figma
-git pull
+cast-to-figma install-skill --folder {agent_skill_folder}
 ```
 
-## What the skill does
+Examples:
 
-The skill instructs agents to use `cast-to-figma` for Figma work:
+```bash
+cast-to-figma install-skill --folder ~/.claude/skills
+cast-to-figma install-skill --folder ~/.agents/skills
+```
+
+One-line Claude Code setup:
+
+```bash
+npm install -g github:newfiction/cast-to-figma && cast-to-figma install-skill --folder ~/.claude/skills
+```
+
+Generic one-line setup:
+
+```bash
+npm install -g github:newfiction/cast-to-figma && cast-to-figma install-skill --folder ~/.agents/skills
+```
+
+## Usage
+
+```bash
+cast-to-figma status
+cast-to-figma ping
+cast-to-figma inspect --depth 3 --scale 1
+cast-to-figma update-text --node-id 12:34 --text "Hello"
+cast-to-figma watch
+cast-to-figma watch --instruction="Apply the same correction to the remaining cards"
+```
+
+The CLI auto-starts a local bridge on `127.0.0.1:7777`. Override the port when needed:
+
+```bash
+CAST_BRIDGE_PORT=7778 cast-to-figma status
+```
+
+## Commands
+
+- `status` — check bridge/plugin connection
+- `ping` — return page/file metadata
+- `inspect` — inspect node architecture and save a screenshot artifact
+- `list-pages` — list open file pages
+- `get-skill`, `update-skill` — read/write file-local agent skill markdown
+- `get-memory`, `clear-memory` — read/clear file-local Cast memory
+- `get-supervision`, `clear-supervision-backlog`, `clear-supervision` — manage supervision state
+- `update-properties`, `resize-node`, `update-fills`, `update-text`, `set-layout` — edit existing nodes
+- `create-node`, `move-node`, `delete-node`, `select-node` — manipulate nodes
+- `list-user-tools`, `get-user-tools`, `get-user-tool` — inspect file-local procedural tools
+- `add-user-tool`, `edit-user-tool`, `delete-user-tool`, `run-user-tool` — manage and execute file-local procedural tools
+- `run-script` — execute scoped JavaScript in the Figma plugin context
+- `undo` — undo the last Figma operation
+- `watch` — watch designer change cycles and print required agent actions
+- `install-skill --folder {agent_skill_folder}` — install the bundled skill into an agent skill folder
+- `debug` — developer probe
+
+Run help:
+
+```bash
+cast-to-figma help
+```
+
+## Agent skill
+
+The installed skill instructs agents to:
 
 - inspect selected nodes and screenshots before visual edits
 - read file-local skill, memory, user tools, and supervision context
@@ -55,23 +100,26 @@ The skill instructs agents to use `cast-to-figma` for Figma work:
 - learn from designer corrections
 - watch for designer change cycles after completing work
 
-## Version metadata
+## Development
 
-The skill metadata is declared in `SKILL.md` frontmatter:
-
-```yaml
-version: 0.1.0
-requiresCli: ">=0.1.0"
-cliPackage: "@newfiction/cast-to-figma"
-cliBinary: "cast-to-figma"
+```bash
+npm install
+npm run check
+npm pack --dry-run
 ```
 
-This lets future tooling check whether the installed skill, CLI, and Figma plugin are compatible.
+Fresh global install test:
+
+```bash
+npm uninstall -g @newfiction/cast-to-figma
+npm install -g .
+cast-to-figma install-skill --folder /tmp/cast-skill-test
+cast-to-figma status
+```
 
 ## Links
 
-- CLI repo: https://github.com/newfiction/cast-to-figma-cli
-- npm package: https://www.npmjs.com/package/@newfiction/cast-to-figma
+- Repo: https://github.com/newfiction/cast-to-figma
 - Figma plugin: https://www.figma.com/community/plugin/1398410342518853126
 
 ## License
