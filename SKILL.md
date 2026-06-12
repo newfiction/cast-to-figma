@@ -40,7 +40,7 @@ Use this workflow for every Cast design task:
 
 3. **Execute one step**
    - If changing existing frames, run `inspect` first.
-   - Prefer wrapped tools: `update-properties`, `resize-node`, `update-fills`, `update-text`, `set-layout`, `create-node`, `move-node`, `delete-node`, `select-node`.
+   - Prefer wrapped tools: `get-variables`, `get-components`, `update-properties`, `resize-node`, `update-fills`, `update-text`, `set-layout`, `create-node`, `move-node`, `delete-node`, `select-node`.
    - Use `run-user-tool` when a registered user tool matches the task. It runs a trusted script against a scoped `nodeId` plus `params`.
    - Use `run-script` only when wrapped tools and registered user tools are insufficient; keep it scoped to the current step.
    - Inspect the screenshot after each visual edit. Screenshot verification is mandatory.
@@ -120,6 +120,26 @@ cast-to-figma inspect --agent <agent-id> --node-id 12:34 --mode default --depth 
 ```
 
 Use `--mode deep` for more readable Figma properties. If a `nodeUrl` points to a different file, open that file in Figma first.
+
+### get-variables
+
+Lists local Figma variables with lean defaults: collection summaries, type counts, modes, and small samples. Drill down with filters before requesting values.
+
+```bash
+cast-to-figma get-variables --agent <agent-id>
+cast-to-figma get-variables --agent <agent-id> --query accent --limit 20
+cast-to-figma get-variables --agent <agent-id> --collection Theme --include-values
+```
+
+### get-components
+
+Lists local components and component sets with lean defaults: page summaries and samples. Defaults to the current page; use `--all-pages` only when needed.
+
+```bash
+cast-to-figma get-components --agent <agent-id>
+cast-to-figma get-components --agent <agent-id> --query button --details
+cast-to-figma get-components --agent <agent-id> --all-pages --limit 50
+```
 
 ### undo
 

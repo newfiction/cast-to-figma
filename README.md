@@ -16,24 +16,24 @@ Install and open the [Cast plugin](https://www.figma.com/community/plugin/139841
 
 ```bash
 npm install -g github:newfiction/cast-to-figma
-cast-to-figma install-skill --folder {agent_skill_folder}
+cast-to-figma install-cli-skill --folder {agent_skill_folder}
 ```
 
 `{agent_skill_folder}` stands for agent skills reference folder, e.g:
 
 ```bash
 npm install -g github:newfiction/cast-to-figma
-cast-to-figma install-skill --folder ~/.claude/skills
+cast-to-figma install-cli-skill --folder ~/.claude/skills
 ```
 
 ## Usage
-
-![Cast workflow](assets/scheme.png)
 
 ```bash
 cast-to-figma status
 cast-to-figma ping
 cast-to-figma inspect --depth 3 --scale 1
+cast-to-figma get-variables --query accent
+cast-to-figma get-components --query button
 cast-to-figma update-text --node-id 12:34 --text "Hello"
 cast-to-figma watch
 cast-to-figma watch --instruction="Apply the same correction to the remaining cards"
@@ -50,6 +50,8 @@ CAST_BRIDGE_PORT=7778 cast-to-figma status
 - `status` — check bridge/plugin connection
 - `ping` — return page/file metadata
 - `inspect` — inspect node architecture and save a screenshot artifact
+- `get-variables` — list local variables with lean summaries and optional drill-down filters
+- `get-components` — list local components/component sets with lean summaries and optional drill-down filters
 - `list-pages` — list open file pages
 - `get-skill`, `update-skill` — read/write file-local agent skill markdown
 - `get-memory`, `clear-memory` — read/clear file-local Cast memory
@@ -61,7 +63,7 @@ CAST_BRIDGE_PORT=7778 cast-to-figma status
 - `run-script` — execute scoped JavaScript in the Figma plugin context
 - `undo` — undo the last Figma operation
 - `watch` — watch designer change cycles and print required agent actions
-- `install-skill --folder {agent_skill_folder}` — install the bundled skill into an agent skill folder
+- `install-cli-skill --folder {agent_skill_folder}` — install the bundled CLI skill into an agent skill folder
 - `debug` — developer probe
 
 ### Help
@@ -72,31 +74,15 @@ cast-to-figma help
 
 ## Agent skill
 
-The installed skill instructs agents to:
+![[scheme.png]]
 
+*The installed skill instructs agents to*:
 - inspect selected nodes and screenshots before visual edits
 - read file-local skill, memory, user tools, and supervision context
 - make small, verifiable design changes
 - use wrapped Cast tools before raw scripts
 - learn from designer corrections
 - watch for designer change cycles after completing work
-
-## Development
-
-```bash
-npm install
-npm run check
-npm pack --dry-run
-```
-
-Fresh global install test:
-
-```bash
-npm uninstall -g @newfiction/cast-to-figma
-npm install -g .
-cast-to-figma install-skill --folder /tmp/cast-skill-test
-cast-to-figma status
-```
 
 ## Links
 

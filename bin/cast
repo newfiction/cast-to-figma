@@ -24,6 +24,8 @@ const TOOL_LABELS = {
     'clear-supervision-backlog': 'Cleared supervision backlog',
     'clear-supervision': 'Cleared supervision',
     inspect: 'Inspected selection',
+    'get-variables': 'Listed variables',
+    'get-components': 'Listed components',
     'update-properties': 'Updated properties',
     'resize-node': 'Resized node',
     'update-fills': 'Updated fills',
@@ -43,13 +45,25 @@ const TOOL_LABELS = {
     'delete-user-tool': 'Deleted user tool',
     'run-user-tool': 'Ran user tool',
     debug: 'Ran debug probe',
-    'install-skill': 'Installed Cast agent skill',
+    'install-cli-skill': 'Installed Cast CLI skill',
     exec: 'Ran tool',
   },
 };
 const BRIDGE_PORT = process.env.CAST_BRIDGE_PORT || process.env.BRIDGE_PORT || '7777';
 const BRIDGE = process.env.CAST_BRIDGE_URL || `http://127.0.0.1:${BRIDGE_PORT}`;
 const INSPECT_INLINE_LIMIT_BYTES = Number(process.env.CAST_INSPECT_INLINE_LIMIT_BYTES || 750000);
+
+const BOOLEAN_FLAGS = new Set([
+  'json',
+  'no-ensure',
+  'inline-screenshot',
+  'no-inline-screenshot',
+  'include-values',
+  'include-scopes',
+  'include-variants',
+  'all-pages',
+  'details',
+]);
 
 const COMMANDS = new Map([
   ['status', 'status'],
@@ -64,6 +78,9 @@ const COMMANDS = new Map([
   ['clear-supervision-backlog', 'clear-supervision-backlog'],
   ['clear-supervision', 'clear-supervision'],
   ['inspect', 'inspect'],
+  ['get-variables', 'get-variables'],
+  ['get-components', 'get-components'],
+  ['get-componenents', 'get-components'],
   ['update-properties', 'update-properties'],
   ['resize-node', 'resize-node'],
   ['update-fills', 'update-fills'],
@@ -83,7 +100,7 @@ const COMMANDS = new Map([
   ['delete-user-tool', 'delete-user-tool'],
   ['run-user-tool', 'run-user-tool'],
   ['debug', 'debug'],
-  ['install-skill', 'install-skill'],
+  ['install-cli-skill', 'install-cli-skill'],
   ['exec', 'exec'],
   ['watch', 'watch'],
 ]);
@@ -95,6 +112,8 @@ function usage() {
 Usage:
   cast-to-figma status
   cast-to-figma inspect [--node-id ID] [--node-url URL] [--depth N] [--scale N] [--no-inline-screenshot]
+  cast-to-figma get-variables [--collection NAME] [--query TEXT] [--include-values]
+  cast-to-figma get-components [--query TEXT] [--page-id ID] [--all-pages] [--details]
   cast-to-figma get-skill
   cast-to-figma get-memory [--limit N]
   cast-to-figma get-supervision
@@ -107,7 +126,7 @@ Usage:
   cast-to-figma run-user-tool --tool-id ID --node-id ID [--params JSON]
   cast-to-figma exec --tool TOOL [--data JSON]
   cast-to-figma watch [--instruction TEXT]
-  cast-to-figma install-skill --folder {agent_skill_folder}
+  cast-to-figma install-cli-skill --folder {agent_skill_folder}
 
 Common options:
   --agent ID       Agent id shown in Figma (default: cli)
@@ -126,7 +145,7 @@ function parse(argv) {
       continue;
     }
     const key = arg.slice(2);
-    if (key === 'json' || key === 'no-ensure' || key === 'inline-screenshot' || key === 'no-inline-screenshot') {
+    if (BOOLEAN_FLAGS.has(key)) {
       opts[key] = true;
       continue;
     }
@@ -144,8 +163,8 @@ function expandHome(filePath) {
   return filePath;
 }
 
-/** Copies bundled skill files into an agent skill folder. */
-function installSkill(opts) {
+/** Copies bundled CLI skill files into an agent skill folder. */
+function installCliSkill(opts) {
   const agentSkillFolder = path.resolve(expandHome(opts.folder || path.join(process.env.HOME || '.', '.agents', 'skills')));
   const target = path.join(agentSkillFolder, 'cast-to-figma');
   const files = ['SKILL.md', 'README.md', 'LICENSE', path.join('assets', 'cover.png'), path.join('assets', 'scheme.png')];
@@ -161,7 +180,7 @@ function installSkill(opts) {
   }
 
   return {
-    label: `Installed Cast skill to ${target}`,
+    label: `Installed Cast CLI skill to ${target}`,
     agentSkillFolder,
     target,
     files: files.filter((relativePath) => fs.existsSync(path.join(ROOT, relativePath))),
@@ -175,9 +194,13 @@ function buildData(tool, opts) {
   const data = {};
   if (opts['node-id']) data.nodeId = opts['node-id'];
   if (opts['node-url']) data.nodeUrl = opts['node-url'];
+  if (opts['page-id']) data.pageId = opts['page-id'];
+  if (opts.collection) data.collection = opts.collection;
+  if (opts.query) data.query = opts.query;
   if (opts.depth) data.depth = Number(opts.depth);
   if (opts.scale) data.scale = Number(opts.scale);
   if (opts.mode) data.mode = opts.mode;
+  if (opts.scope) data.scope = opts.scope;
   if (opts.text) data.text = opts.text;
   if (opts['font-size']) data.fontSize = Number(opts['font-size']);
   if (opts.name) data.name = opts.name;
@@ -191,6 +214,11 @@ function buildData(tool, opts) {
   if (opts.index) data.index = Number(opts.index);
   if (opts.parentId || opts['parent-id']) data.parentId = opts.parentId || opts['parent-id'];
   if (opts.type) data.type = opts.type;
+  if (opts['include-values']) data.includeValues = true;
+  if (opts['include-scopes']) data.includeScopes = true;
+  if (opts['include-variants']) data.includeVariants = true;
+  if (opts['all-pages']) data.allPages = true;
+  if (opts.details) data.details = true;
   if (opts['layout-mode']) data.layoutMode = opts['layout-mode'];
   if (opts['primary-axis-sizing-mode']) data.primaryAxisSizingMode = opts['primary-axis-sizing-mode'];
   if (opts['counter-axis-sizing-mode']) data.counterAxisSizingMode = opts['counter-axis-sizing-mode'];
@@ -209,6 +237,8 @@ function buildData(tool, opts) {
   if (opts.manifest) data.manifest = JSON.parse(opts.manifest);
   if (opts['manifest-file']) data.manifest = JSON.parse(fs.readFileSync(opts['manifest-file'], 'utf8'));
   if (opts.limit) data.limit = Number(opts.limit);
+  if (opts.offset) data.offset = Number(opts.offset);
+  if (opts['sample-limit']) data.sampleLimit = Number(opts['sample-limit']);
   if (opts['skill-md']) data.skillMd = opts['skill-md'];
   if (opts['skill-md-file']) data.skillMd = fs.readFileSync(opts['skill-md-file'], 'utf8');
   return data;
@@ -324,7 +354,9 @@ function printHuman(tool, result) {
     }
   }
   if (result.pageName) console.log(`page: ${result.pageName}`);
-  if (Array.isArray(result.pages)) console.log(`pages: ${result.pages.map((p) => p.name).join(', ')}`);
+  if (result.summary && tool === 'get-variables') console.log(`variables: ${result.summary.variableCount} across ${result.summary.collectionCount} collections`);
+  if (result.summary && tool === 'get-components') console.log(`components: ${result.summary.componentCount}, sets: ${result.summary.componentSetCount}, pages: ${result.summary.pageCount}`);
+  if (Array.isArray(result.pages)) console.log(`pages: ${result.pages.map((p) => p.name || p.pageName).join(', ')}`);
   if (Array.isArray(result.tools)) console.log(`tools: ${result.tools.map((t) => t.id || t.name).join(', ') || '(none)'}`);
   if (result.contextMd) console.log(`\n${result.contextMd}`);
 }
@@ -338,22 +370,23 @@ async function main() {
     return;
   }
   if (!COMMANDS.has(command)) throw new Error(`Unknown Cast command: ${command}`);
-  if (command === 'watch') {
+  const castCommand = COMMANDS.get(command);
+  if (castCommand === 'watch') {
     const child = spawnSync(WATCH, process.argv.slice(3), { stdio: 'inherit' });
     process.exit(child.status === null ? 1 : child.status);
   }
-  if (command === 'install-skill') {
-    const result = installSkill(opts);
+  if (command === 'install-cli-skill') {
+    const result = installCliSkill(opts);
     if (opts.json) console.log(JSON.stringify(result, null, 2));
     else printHuman(command, result);
     return;
   }
   ensure(opts);
-  const data = buildData(command, opts);
-  const result = await call(command, data, opts.agent || 'cli');
-  const output = command === 'inspect' ? attachVisualArtifacts(result, opts) : result;
+  const data = buildData(castCommand, opts);
+  const result = await call(castCommand, data, opts.agent || 'cli');
+  const output = castCommand === 'inspect' ? attachVisualArtifacts(result, opts) : result;
   if (opts.json) console.log(JSON.stringify(output, null, 2));
-  else printHuman(command, output);
+  else printHuman(castCommand, output);
 }
 
 main().catch((error) => {
