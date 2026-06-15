@@ -86,7 +86,7 @@ Returns `{ pong, pageName, fileKey, pluginVersion }`.
 
 ### get-skill
 
-Reads file-local skill markdown from `figma.root.getPluginData("skill")`.
+Reads file-local skill markdown from Cast shared plugin data: namespace `cast`, key `skill` (with legacy private-data fallback).
 
 ```bash
 cast-to-figma get-skill --agent <agent-id>
@@ -94,7 +94,7 @@ cast-to-figma get-skill --agent <agent-id>
 
 ### update-skill
 
-Writes file-local skill markdown to `figma.root.setPluginData("skill", skillMd)`.
+Writes file-local skill markdown to Cast shared plugin data: namespace `cast`, key `skill`.
 
 ```bash
 cast-to-figma update-skill --agent <agent-id> --skill-md-file /path/to/skill.md
@@ -298,10 +298,11 @@ cast-to-figma run-user-tool --agent <agent-id> --tool-id generate-quadtree --nod
 Executes JavaScript inside the plugin Figma context. `source` is wrapped in `async function() { ... }`; use `return` to send JSON-safe data back.
 
 ```bash
-cast-to-figma run-script --agent <agent-id> --reason "Read current page name" --source "return figma.currentPage.name;"
+cast-to-figma run-script --agent <agent-id> --reason "Checked current Figma page name before editing" --source "return figma.currentPage.name;"
 ```
 
 Notes:
+- Write `--reason` as a descriptive completed activity in past tense because it appears in the Cast UI feed, e.g. `"Extracted latest link icon vector geometry from the selected component"`.
 - `await` works inside `source`.
 - Return plain JSON data, not live node proxies.
 - Use for discovery, reads, and targeted mutations.
@@ -311,7 +312,7 @@ Notes:
 
 ### get-memory
 
-Reads rolling file-local Cast memory from `figma.root.getPluginData("memory")`.
+Reads rolling file-local Cast memory from Cast shared plugin data: namespace `cast`, key `memory` (with legacy private-data fallback).
 
 ```bash
 cast-to-figma get-memory --agent <agent-id> --limit 20
@@ -367,6 +368,8 @@ cast-to-figma debug --agent <agent-id>
 
 ## Memory and supervision
 
-When Cast is open, it listens to `documentchange` and stores the last ~100 user entries in root plugin data key `memory`. Entries include timestamps, page, current selection, changed nodes, and compact node snapshots with geometry, layout, alignment, appearance, effects, styles, tokens, and fonts where applicable. The feed is byte-bounded (~90 kB) and evicts oldest entries first when full.
+When Cast is open, it listens to `documentchange` and stores the last ~100 user entries in Cast shared plugin data: namespace `cast`, key `memory`. Entries include timestamps, page, current selection, changed nodes, and compact node snapshots with geometry, layout, alignment, appearance, effects, styles, tokens, and fonts where applicable. The feed is byte-bounded (~90 kB) and evicts oldest entries first when full.
+
+The file skill is also stored in Cast shared plugin data: namespace `cast`, key `skill`. Both shared keys keep legacy private plugin-data fallbacks for older files.
 
 When an agent mutates nodes, Cast adds those nodes to `supervision.unsupervised`. When the designer later edits one of those nodes or its descendants, Cast moves it into `supervision.backlog` and writes a `supervision-correction` entry to memory. Memory is continuity; supervision backlog is the actionable learning queue.
