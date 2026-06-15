@@ -35,7 +35,6 @@ cast-to-figma install-cli-skill --folder {agent_skill_folder}
 `{agent_skill_folder}` stands for agent skills reference folder, e.g:
 
 ```bash
-npm install -g github:newfiction/cast-to-figma
 cast-to-figma install-cli-skill --folder ~/.claude/skills
 ```
 
@@ -87,7 +86,7 @@ cast-to-figma help
 
 ## Agent skill
 
-![[scheme.png]]
+![Scheme](assets/scheme.png)
 
 *The installed skill instructs agents to*:
 - inspect selected nodes and screenshots before visual edits
