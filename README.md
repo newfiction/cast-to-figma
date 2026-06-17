@@ -7,17 +7,13 @@ Local CLI, bridge, and agent skill for controlling Figma through the [Cast Figma
 ### Cast lets AI agents inspect, generate, and edit designs using the context of your actual Figma file: including your edits, naming patterns, layout habits, and file-specific conventions.
 
 
-**File skill**
-Cast builds a file-local skill as you work. When you correct an agent’s output, those corrections become reusable guidance for future edits in the same file.
+**File skill.** Cast builds a file-local skill as you work. When you correct an agent’s output, those corrections become reusable guidance for future edits in the same file.
 
-**Shorter prompts**
-Agents remember recent file activity, so you can ask for changes without re-explaining the full design context every time.
+**Shorter prompts.** Agents remember recent file activity, so you can ask for changes without re-explaining the full design context every time.
 
-**Real-time coworking**
-Keep designing while the agent helps in the background: rename layers, assign tokens, clean up structure, adapt repeated elements, or apply feedback across the file.
+**Real-time coworking.** Keep designing while the agent helps in the background: rename layers, assign tokens, clean up structure, adapt repeated elements, or apply feedback across the file.
 
-**File tools**
-Create procedural tools for the file: generate graphics, apply tokens, batch-edit layouts, adapt designs, and automate repeated tasks without running expensive inference for every single operation.
+**File tools.** Create procedural tools for the file: generate graphics, apply tokens, batch-edit layouts, adapt designs, and automate repeated tasks without running expensive inference for every single operation.
 
 ## Install
 
