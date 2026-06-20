@@ -30,17 +30,20 @@ Pass `--agent <agent-id>` when useful so the Cast panel can show which harness i
 Use this workflow for every Cast design task:
 
 1. **Read file context**
-   - Run `get-skill`, `get-memory`, `get-user-tools`, and `get-supervision`.
-   - If supervision backlog has items, learn from them first: inspect affected nodes when needed, update file skill with reusable lessons, then call `clear-supervision-backlog`.
+   - Run `get-skill`, `get-memory`, and `get-user-tools`.
+   - If the user says “this”, “that”, “these”, “here”, “selected”, “current”, or “what I changed”, run default `inspect` before planning. It resolves `nodeUrl` → `nodeId` → current selection → recent user-memory edited nodes.
+   - In fresh files or empty skills, target selected/recently edited frames first. If no selection exists, use `get-memory --limit 20`; do not search the whole file unless needed or asked.
+   - If recalled correction summaries exist, treat them as background unless the user asks to learn from or clear them.
 
 2. **Plan small steps**
    - Split the task into discrete, inspectable edits.
    - One step = one concrete Figma delivery, e.g. align one section, adapt one block, fix one typography group.
+   - For reference-based edits, inspect reference and target, change only explicitly requested traits, and preserve everything else. Default to strict fidelity, not reinterpretation.
    - Prefer available user tools for repeated procedural tasks. Avoid large all-in-one `run-script` edits.
 
 3. **Execute one step**
    - If changing existing frames, run `inspect` first.
-   - Prefer wrapped tools: `get-variables`, `get-components`, `update-properties`, `resize-node`, `update-fills`, `update-text`, `set-layout`, `create-node`, `move-node`, `delete-node`, `select-node`.
+   - Prefer wrapped tools: `get-variables`, `set-variables`, `set-styles`, `get-components`, `update-properties`, `resize-node`, `update-fills`, `update-text`, `set-layout`, `clone-node`, `clone-layout`, `clone-traits`, `create-node`, `move-node`, `delete-node`, `select-node`.
    - Use `run-user-tool` when a registered user tool matches the task. It runs a trusted script against a scoped `nodeId` plus `params`.
    - Use `run-script` only when wrapped tools and registered user tools are insufficient; keep it scoped to the current step.
    - Inspect the screenshot after each visual edit. Screenshot verification is mandatory.
@@ -49,20 +52,24 @@ Use this workflow for every Cast design task:
 4. **Continue or finish**
    - Continue only after the current step passes visual verification.
    - At the end, call `update-skill` only if there is reusable file-specific learning.
-   - After the task is done, start watching unless the user asked not to.
+   - After the task is done, start coworking unless the user asked not to.
 
-## Watching
+## Coworking
 
-Watching is the default post-task loop around designer `change-cycle` events. It is harness-visible and may block the session: tell the user that the agent is watching and they must cancel watching to converse or give a new instruction.
+`cowork` is the default post-task loop around designer `change-cycle` events. The interface label is `Real-time coworking`.
+
+External harness flow: Pi runs `cowork`, the CLI waits for one simple cowork event, prints recalled memory and correction summaries, then exits. Pi decides what to do and starts `cowork` again.
+
+Internal harness flow: the in-plugin chat calls the `cowork` tool, waits for a cycle, runs one internal inference turn, acts, then resumes coworking if still active.
 
 ```bash
-cast-to-figma watch
-cast-to-figma watch --instruction="Apply the same correction to the remaining cards"
+cast-to-figma cowork --agent pi
+cast-to-figma cowork --agent pi --instruction="Apply the same correction to the remaining cards" --timeout 600 --wait 3 --target 12:34
 ```
 
-By default, `watch` exits after 5 seconds without Cast activity. Use `--idle-timeout=N` to change this or `--no-idle-timeout` for a blocking loop.
+Parameters: `--instruction`, `--timeout` (default 600 seconds), `--wait` (default 3 seconds after designer stops editing), `--target`, `--json`, and `--agent`.
 
-On every `change-cycle`, the Cast plugin classifies the next action: inspect changed layers first, supervision second, optional instruction third. For actionable cycles, the plan includes highest-level changed-layer inspect targets derived from selection/change ancestry, and the CLI prints ready-to-run `cast-to-figma inspect --node-id ...` commands. Complete them, restart the printed watch command, and keep looping until cancelled. Exit watching automatically when the Cast plugin disconnects, when the user cancels, or when the idle timeout elapses.
+On every completed cycle, Cast returns lightweight recalled context. There is no built-in correction-first plan; corrections are just pending context unless the user requests action.
 
 ## Tools
 
@@ -113,7 +120,7 @@ You must inspect the screenshot before making visual edits.
 
 Honor this contract. Read the returned `screenshotPath` before editing whenever your harness supports local image reads. If `VISUAL_ARTIFACT_TOO_LARGE` appears, rerun the printed smaller-scale inspect command.
 
-Target resolution order: `nodeUrl` → `nodeId` → current selection. When multiple nodes are selected, `inspect` returns `nodes[]`, each with its own screenshot artifact.
+Target resolution order: `nodeUrl` → `nodeId` → current selection → recent user-memory edited nodes. When multiple nodes are selected or resolved from memory, `inspect` returns `nodes[]`, each with its own screenshot artifact. Common non-destructive/edit tools such as `update-text`, `update-fills`, `update-properties`, `resize-node`, `set-layout`, and `select-node` also resolve `nodeId` → current selection → recent user-memory edited node. Destructive or broad tools should still pass explicit ids.
 
 ```bash
 cast-to-figma inspect --agent <agent-id> --node-id 12:34 --mode default --depth 3 --scale 1
@@ -131,6 +138,26 @@ cast-to-figma get-variables --agent <agent-id> --query accent --limit 20
 cast-to-figma get-variables --agent <agent-id> --collection Theme --include-values
 ```
 
+### set-variables
+
+Creates or updates variable collections, modes, and variables generically. Upserts by name: reuses existing collections/variables, adds missing modes, and overwrites mode values. COLOR values accept a hex string or `{r,g,b,a}`; any type accepts an alias `{"alias":"Collection/Name"}`. Optional `scopes` and `description` per variable. If `modes` is omitted it is inferred from the first variable's value keys.
+
+```bash
+cast-to-figma set-variables --agent <agent-id> --data '{"collections":[{"name":"Theme","modes":["Light","Dark"],"variables":[{"name":"fill","type":"COLOR","description":"Surface background","values":{"Light":"#FFFFFF","Dark":"#000000"}},{"name":"content","type":"COLOR","values":{"Light":"#000000","Dark":"#FFFFFF"}}]},{"name":"Space","variables":[{"name":"gap","type":"FLOAT","scopes":["GAP"],"values":{"Mode 1":8}},{"name":"gap-alias","type":"FLOAT","values":{"Mode 1":{"alias":"Space/gap"}}}]}]}'
+```
+
+### set-styles
+
+Creates or updates local text, paint, and effect styles generically. Upserts by name. Each style accepts an optional `description`.
+
+- `text[]`: `{ name, fontFamily, fontStyle?, fontSize?, lineHeight?, letterSpacing?, paragraphSpacing?, textCase?, textDecoration?, description?, bind? }`. `lineHeight` number → `PIXELS`; `letterSpacing` number → `PERCENT`; or pass full `{unit,value}`. `bind` binds variables by path: `{ fontSize, lineHeight, letterSpacing }`.
+- `paint[]`: `{ name, description?, paints: [ "#RRGGBB" | {r,g,b,a} | {variable:"Collection/Name"} ] }`.
+- `effect[]`: `{ name, description?, effects: [ ...raw Figma Effect ] }`.
+
+```bash
+cast-to-figma set-styles --agent <agent-id> --data '{"text":[{"name":"Body","fontFamily":"Helvetica Neue","fontStyle":"Regular","description":"Default body text","bind":{"fontSize":"Typography/body","lineHeight":"Typography/body-leading"}}],"paint":[{"name":"Accent","description":"Brand accent","paints":[{"variable":"Theme/fill"}]}]}'
+```
+
 ### get-components
 
 Lists local components and component sets with lean defaults: page summaries and samples. Defaults to the current page; use `--all-pages` only when needed.
@@ -139,6 +166,42 @@ Lists local components and component sets with lean defaults: page summaries and
 cast-to-figma get-components --agent <agent-id>
 cast-to-figma get-components --agent <agent-id> --query button --details
 cast-to-figma get-components --agent <agent-id> --all-pages --limit 50
+```
+
+### clone-node
+
+Duplicates a node/frame with all content, layout, styling, variables, and optional parent/index/position/text overrides.
+
+```bash
+cast-to-figma clone-node --agent <agent-id> --node-id 12:34 --x 100 --y 200
+```
+
+### clone-layout
+
+Copies only layout behavior from a reference node to a target node: auto-layout mode, padding, gap, sizing modes, alignment, constraints. It does not copy text, fills, effects, or imagery.
+
+```bash
+cast-to-figma clone-layout --agent <agent-id> --from-node-id 12:34 --to-node-id 56:78
+```
+
+### clone-traits
+
+Copies selected traits from a reference node and/or applies memory history trait IDs to a target node. Node traits apply first; memory traits override matching properties. It never copies text content unless `text` is explicitly requested.
+
+```bash
+cast-to-figma clone-traits --agent <agent-id> --from-node-id 12:34 --to-node-id 56:78 --traits typography,fills,radius
+cast-to-figma clone-traits --agent <agent-id> --to-node-id 56:78 --trait-id event_123_trait_fills
+```
+
+Supported traits include `typography`, `fills`, `strokes`, `effects`, `radius`, `spacing`, `layout`, `text-style`, `variables`, `opacity`, `geometry`, and `text`.
+
+### cowork
+
+Starts/stops real-time coworking.
+
+```bash
+cast-to-figma cowork --agent <agent-id> --timeout 600 --wait 3
+cast-to-figma cowork --agent <agent-id> --instruction "Apply the same correction" --target 12:34
 ```
 
 ### undo
@@ -312,11 +375,33 @@ Notes:
 
 ### get-memory
 
-Reads rolling file-local Cast memory from Cast shared plugin data: namespace `cast`, key `memory` (with legacy private-data fallback).
+Reads hyperlink-style file-local Cast memory from Cast shared plugin data: namespace `cast`, key `memory` (with legacy private-data fallback). Default source is user/designer actions.
 
 ```bash
 cast-to-figma get-memory --agent <agent-id> --limit 20
+cast-to-figma get-memory --agent <agent-id> --node-id 12:34 --detail
+cast-to-figma get-memory --agent <agent-id> --trait-id event_123_trait_fills --detail
+cast-to-figma get-memory --agent <agent-id> --event-id event_123 --detail
+cast-to-figma get-memory --agent <agent-id> --source agent
+cast-to-figma get-memory --agent <agent-id> --source all
 ```
+
+Memory is structured as:
+
+- `user.nodes`: recent native Figma node IDs edited by the designer.
+- `user.traits`: before → after property changes, e.g. fill, type, spacing, layout.
+- `user.events`: full edit moments containing snapshots and linked trait IDs.
+- `agent.nodes`: agent-touched nodes awaiting feedback.
+- `agent.corrections`: designer corrections to agent-touched nodes.
+
+**Digest format.** Compact memory returns one short, intentful line per change, with display times like `7:23PM`:
+
+- **Created** — `7:23PM Created 12:34 "Ellipse 1" x -1713, y -12208, 1262×1262, #D9D9D9` (initial properties only, no `null`).
+- **Deleted** — `7:23PM Deleted 12:34 "Ellipse 1"` (no property noise).
+- **Edited** — `7:23PM 12:34 "Ellipse 2" fill #D9D9D9 → #FF0000 (traitId)`.
+
+Colors render as hex (`#RRGGBB`). Bursts of `documentchange` events for the same node within a ~450ms quiet window are **coalesced** into one net line, so a duplicate-drag (create + drag + auto-rename) reads as a single `Created` line at its settled position/name instead of raw move/rename churn. Drill into full snapshots with `--detail` plus `--node-id`, `--trait-id`, or `--event-id`.
+
 
 ### clear-memory
 
@@ -334,28 +419,12 @@ Clears stored internal harness chat history/context while preserving high-level 
 cast-to-figma clear-chat --agent <agent-id>
 ```
 
-### get-supervision
+### clear-agent-corrections
 
-Reads file-local supervision state: `unsupervised` agent outputs awaiting designer feedback and `backlog` designer corrections awaiting learning.
-
-```bash
-cast-to-figma get-supervision --agent <agent-id>
-```
-
-### clear-supervision-backlog
-
-Clears supervision backlog after reusable lessons have been written to file skill. Do not call before `update-skill` unless the user explicitly asks to discard corrections.
+Clears pending agent correction summaries when the user asks to discard or reset them.
 
 ```bash
-cast-to-figma clear-supervision-backlog --agent <agent-id>
-```
-
-### clear-supervision
-
-Clears all supervision state. Use only for explicit manual reset.
-
-```bash
-cast-to-figma clear-supervision --agent <agent-id>
+cast-to-figma clear-agent-corrections --agent <agent-id>
 ```
 
 ### debug
@@ -366,10 +435,18 @@ Developer probe for plugin/Figma API capabilities.
 cast-to-figma debug --agent <agent-id>
 ```
 
-## Memory and supervision
+## Memory and recall
 
-When Cast is open, it listens to `documentchange` and stores the last ~100 user entries in Cast shared plugin data: namespace `cast`, key `memory`. Entries include timestamps, page, current selection, changed nodes, and compact node snapshots with geometry, layout, alignment, appearance, effects, styles, tokens, and fonts where applicable. The feed is byte-bounded (~90 kB) and evicts oldest entries first when full.
+When Cast is open, it listens to `documentchange` and stores user/designer edits in Cast shared plugin data: namespace `cast`, key `memory`. Memory is byte-bounded (~90 kB) and evicts oldest details first when full.
+
+Memory has three user layers:
+
+- `user.events`: edit moments with absolute ISO timestamps, display times like `7:23PM`, page, selection context, changed nodes, and compact snapshots.
+- `user.nodes`: recent native Figma node IDs edited by the designer; these can be used as default context when no selection exists.
+- `user.traits`: extracted before → after changes such as fill, stroke, text, typography, spacing, layout, radius, geometry, styles, and variables.
+
+Tool responses may include a compact `recall` envelope with memory and correction summaries only. Use `get-memory --detail` with a `nodeId`, `traitId`, or `eventId` to inspect full linked memory details.
 
 The file skill is also stored in Cast shared plugin data: namespace `cast`, key `skill`. Both shared keys keep legacy private plugin-data fallbacks for older files.
 
-When an agent mutates nodes, Cast adds those nodes to `supervision.unsupervised`. When the designer later edits one of those nodes or its descendants, Cast moves it into `supervision.backlog` and writes a `supervision-correction` entry to memory. Memory is continuity; supervision backlog is the actionable learning queue.
+Agent edits are tracked separately as agent memory. `get-memory --source agent` exposes them as `agent.nodes` and `agent.corrections`; default `get-memory` remains user/designer memory.

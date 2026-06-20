@@ -8,20 +8,26 @@ const path = require('path');
 const { WebSocketServer, WebSocket } = require('ws');
 
 const DEFAULT_PORT = 7777;
+const ROOT = path.resolve(__dirname, '..');
+const PACKAGE = require(path.join(ROOT, 'package.json'));
+const PROTOCOL_VERSION = 1;
 const PORT = Number(process.env.CAST_BRIDGE_PORT || process.env.BRIDGE_PORT || DEFAULT_PORT);
 const HOST = process.env.CAST_BRIDGE_HOST || process.env.BRIDGE_HOST || '127.0.0.1';
 const TIMEOUT_MS = Number(process.env.CAST_TIMEOUT_MS || 30000);
 
 let activePluginSocket = null;
 const pluginSockets = new Set();
+const pluginMetadata = new WeakMap();
 let nextId = 1;
 const pending = new Map();
 const eventQueue = [];
 const MAX_EVENTS = 100;
 let httpServer = null;
-let watching = false;
-let watchInstruction;
-let watchCancelRequested = false;
+let coworking = false;
+let coworkInstruction;
+let coworkWait;
+let coworkTarget;
+let coworkCancelRequested = false;
 
 /** Sends a JSON payload over a WebSocket without throwing. */
 function send(socket, payload) {
@@ -108,6 +114,26 @@ function queueEvent(event) {
   while (eventQueue.length > MAX_EVENTS) eventQueue.shift();
 }
 
+/** Returns version metadata for the active plugin connection. */
+function getActivePluginMetadata() {
+  return activePluginSocket ? pluginMetadata.get(activePluginSocket) || null : null;
+}
+
+/** Returns whether the active plugin version matches this CLI/bridge package. */
+function getVersionMatch(meta) {
+  if (!meta || !meta.pluginVersion) return null;
+  return meta.pluginVersion === PACKAGE.version;
+}
+
+/** Stores plugin hello metadata for later status/version checks. */
+function recordPluginHello(socket, msg) {
+  pluginMetadata.set(socket, {
+    pluginVersion: typeof msg.pluginVersion === 'string' ? msg.pluginVersion : undefined,
+    protocolVersion: Number(msg.protocolVersion || 0) || undefined,
+    connectedAt: new Date().toISOString(),
+  });
+}
+
 /** Creates the HTTP/WebSocket bridge server. */
 function createHttpBridge() {
   const server = http.createServer(async (req, res) => {
@@ -117,10 +143,18 @@ function createHttpBridge() {
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
     if (req.method === 'GET' && req.url === '/status') {
+      const meta = getActivePluginMetadata();
       writeJson(res, 200, {
         connected: !!activePluginSocket && activePluginSocket.readyState === WebSocket.OPEN,
         connectedPlugins: Array.from(pluginSockets).filter((socket) => socket.readyState === WebSocket.OPEN).length,
         bridge: 'cast-server',
+        cliVersion: PACKAGE.version,
+        bridgeVersion: PACKAGE.version,
+        pluginVersion: meta && meta.pluginVersion,
+        protocolVersion: PROTOCOL_VERSION,
+        pluginProtocolVersion: meta && meta.protocolVersion,
+        versionMatch: getVersionMatch(meta),
+        protocolMatch: meta && meta.protocolVersion ? meta.protocolVersion === PROTOCOL_VERSION : null,
         host: HOST,
         port: PORT,
       });
@@ -133,25 +167,27 @@ function createHttpBridge() {
       return;
     }
 
-    if (req.method === 'GET' && req.url === '/watch-cancel') {
-      const cancel = watchCancelRequested;
-      watchCancelRequested = false;
+    if (req.method === 'GET' && req.url === '/cowork-cancel') {
+      const cancel = coworkCancelRequested;
+      coworkCancelRequested = false;
       writeJson(res, 200, { cancel });
       return;
     }
 
-    if (req.method === 'POST' && req.url === '/watch') {
+    if (req.method === 'POST' && req.url === '/cowork') {
       let parsed;
       try { parsed = await readJsonBody(req); }
       catch (error) { writeJson(res, 400, { error: 'Invalid JSON body' }); return; }
       const state = parsed && parsed.state === 'start' ? 'start' : 'stop';
-      watching = state === 'start';
-      watchInstruction = state === 'start' && typeof parsed.instruction === 'string' ? parsed.instruction : undefined;
-      if (state === 'start') watchCancelRequested = false;
+      coworking = state === 'start';
+      coworkInstruction = state === 'start' && typeof parsed.instruction === 'string' ? parsed.instruction : undefined;
+      coworkWait = state === 'start' && typeof parsed.wait === 'number' ? parsed.wait : undefined;
+      coworkTarget = state === 'start' && typeof parsed.target === 'string' ? parsed.target : undefined;
+      if (state === 'start') coworkCancelRequested = false;
       if (activePluginSocket && activePluginSocket.readyState === WebSocket.OPEN) {
-        send(activePluginSocket, { type: 'watch', state, instruction: watchInstruction });
+        send(activePluginSocket, { type: 'cowork', state, instruction: coworkInstruction, wait: coworkWait, target: coworkTarget });
       }
-      writeJson(res, 200, { watching });
+      writeJson(res, 200, { coworking });
       return;
     }
 
@@ -188,15 +224,20 @@ function createHttpBridge() {
     }
     activePluginSocket = socket;
     send(socket, { type: 'active' });
-    if (watching) send(socket, { type: 'watch', state: 'start', instruction: watchInstruction });
+    if (coworking) send(socket, { type: 'cowork', state: 'start', instruction: coworkInstruction, wait: coworkWait, target: coworkTarget });
     console.error(`[cast] plugin connected (${pluginSockets.size} total)`);
 
     socket.on('message', (buf) => {
       let msg;
       try { msg = JSON.parse(buf.toString()); } catch (_) { return; }
 
-      if (msg && msg.type === 'cancel-watch') {
-        watchCancelRequested = true;
+      if (msg && msg.type === 'cancel-cowork') {
+        coworkCancelRequested = true;
+        return;
+      }
+
+      if (msg && msg.type === 'hello') {
+        recordPluginHello(socket, msg);
         return;
       }
 

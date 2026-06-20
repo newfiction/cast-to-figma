@@ -1,0 +1,159 @@
+#!/usr/bin/env node
+
+/** Real-time coworking sensor for external harnesses. */
+const { spawnSync } = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const ROOT = path.resolve(__dirname, '..');
+const ENSURE = path.join(ROOT, 'bridge', 'ensure.sh');
+const argv = process.argv.slice(2);
+
+/** Prints cowork usage. */
+function usage() {
+  console.log(`Cast cowork
+
+Usage:
+  cast-to-figma cowork [--instruction TEXT] [--timeout 600] [--wait 3] [--target NODE_ID] [--json] [--agent ID]
+
+Options:
+  --instruction TEXT      Instruction to apply when the designer stops working
+  --timeout N             Max seconds to wait for one cowork cycle (default: 600)
+  --wait N                Seconds after designer stops editing before cycle ends (default: 3)
+  --target NODE_ID        Optional target node where updates should be delivered
+  --json                  Print raw cowork event JSON
+  --agent ID              External harness id, e.g. pi
+`);
+}
+
+/** Returns an option value from either --name=value or --name value syntax. */
+function optionValue(name) {
+  const withEquals = argv.find((arg) => arg.startsWith(`${name}=`));
+  if (withEquals) return withEquals.slice(name.length + 1);
+  const index = argv.indexOf(name);
+  return index >= 0 ? argv[index + 1] : undefined;
+}
+
+if (argv.includes('--help') || argv.includes('-h') || argv.includes('help')) {
+  usage();
+  process.exit(0);
+}
+
+const bridgePort = process.env.CAST_BRIDGE_PORT || process.env.BRIDGE_PORT || '7777';
+const bridge = process.env.CAST_BRIDGE_URL || `http://127.0.0.1:${bridgePort}`;
+const intervalMs = Number(process.env.CAST_COWORK_INTERVAL_MS || 500);
+const rawJson = argv.includes('--json');
+const timeoutSeconds = Number(optionValue('--timeout') || 600);
+const waitSeconds = Number(optionValue('--wait') || 3);
+const instruction = optionValue('--instruction');
+const target = optionValue('--target');
+const agent = optionValue('--agent') || 'cli';
+const timeoutMs = timeoutSeconds > 0 ? timeoutSeconds * 1000 : 600000;
+const startedAt = Date.now();
+
+/** Sleeps for the given number of milliseconds. */
+function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+
+/** Starts the bridge. */
+function ensureBridge() { spawnSync(ENSURE, { stdio: 'ignore' }); }
+
+/** Returns whether the Cast plugin is currently connected. */
+async function connected() {
+  const res = await fetch(`${bridge}/status`);
+  if (!res.ok) return false;
+  const json = await res.json();
+  return !!json.connected;
+}
+
+/** Starts/stops coworking in the bridge/plugin. */
+async function setCoworking(state) {
+  await fetch(`${bridge}/cowork`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ state, instruction: state === 'start' ? instruction : undefined, wait: state === 'start' ? waitSeconds : undefined, target: state === 'start' ? target : undefined, agent }),
+  }).catch(() => {});
+}
+
+/** Returns whether the user cancelled coworking from the Cast plugin. */
+async function coworkCancelled() {
+  try {
+    const res = await fetch(`${bridge}/cowork-cancel`);
+    if (!res.ok) return false;
+    return !!(await res.json()).cancel;
+  } catch (_) { return false; }
+}
+
+/** Saves JSON data and returns its artifact path. */
+function saveArtifact(prefix, value) {
+  const dir = path.join(os.tmpdir(), 'cast-artifacts');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+  fs.writeFileSync(file, JSON.stringify(value, null, 2));
+  return file;
+}
+
+/** Returns true when total timeout elapsed. */
+function timedOut() { return Date.now() - startedAt >= timeoutMs; }
+
+/** Prints a simple cowork event. */
+function printCowork(event) {
+  if (rawJson) {
+    process.stdout.write(`${JSON.stringify(event)}\n`);
+    return;
+  }
+
+  const file = saveArtifact('cowork', event);
+  const memory = event.recall?.memory?.summary || [];
+  const corrections = event.recall?.corrections?.summary || [];
+  process.stdout.write('Real-time coworking cycle\n');
+  process.stdout.write(`event: ${file}\n`);
+  process.stdout.write('\nMemory summary:\n');
+  if (memory.length) memory.slice(-10).forEach((line) => process.stdout.write(`  ${line}\n`));
+  else process.stdout.write('  none\n');
+  process.stdout.write('\nCorrection summary:\n');
+  if (corrections.length) corrections.slice(-10).forEach((line) => process.stdout.write(`  ${line}\n`));
+  else process.stdout.write('  none\n');
+  if (event.target) process.stdout.write(`\nTarget: ${event.target}\n`);
+  if (event.instruction) process.stdout.write(`Instruction: ${event.instruction}\n`);
+}
+
+/** Polls bridge events correctly and returns when cowork appears. */
+async function pollOnce() {
+  const res = await fetch(`${bridge}/events`);
+  if (!res.ok) throw new Error(`GET /events failed: ${res.status}`);
+  const json = await res.json();
+  const events = Array.isArray(json.events) ? json.events : [];
+  for (const event of events) {
+    if (event?.type === 'cowork' && !event.state) {
+      printCowork(event);
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Runs one external cowork wait cycle. */
+async function main() {
+  ensureBridge();
+  process.stderr.write(`Real-time coworking${instruction ? ` with instruction: ${instruction}` : ''}…\n`);
+  process.stderr.write('Waiting for the designer to stop working. Cancel to converse.\n');
+  await setCoworking('start');
+  try {
+    while (!timedOut()) {
+      if (!(await connected())) throw new Error('Cast plugin disconnected');
+      if (await coworkCancelled()) return;
+      if (await pollOnce()) return;
+      await sleep(intervalMs);
+    }
+    process.stderr.write(`No coworking cycle within ${timeoutSeconds}s.\n`);
+    process.exitCode = 124;
+  } finally {
+    await setCoworking('stop');
+  }
+}
+
+main().catch((error) => {
+  process.stderr.write(`[cowork] ${error.message || String(error)}\n`);
+  process.exit(1);
+});

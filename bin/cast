@@ -8,8 +8,11 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
+const PACKAGE = require(path.join(ROOT, 'package.json'));
+const PROTOCOL_VERSION = 1;
+const GITHUB_REPO = 'newfiction/cast-to-figma';
 const ENSURE = path.join(ROOT, 'bridge', 'ensure.sh');
-const WATCH = path.join(ROOT, 'bin', 'watch');
+const COWORK = path.join(ROOT, 'bin', 'cowork');
 const TOOL_LABELS = {
   done: {
     status: 'Checked bridge status',
@@ -20,9 +23,7 @@ const TOOL_LABELS = {
     'get-memory': 'Read memory',
     'clear-memory': 'Cleared memory',
     'clear-chat': 'Cleared chat',
-    'get-supervision': 'Read supervision',
-    'clear-supervision-backlog': 'Cleared supervision backlog',
-    'clear-supervision': 'Cleared supervision',
+    'clear-agent-corrections': 'Cleared agent corrections',
     inspect: 'Inspected selection',
     'get-variables': 'Listed variables',
     'get-components': 'Listed components',
@@ -35,6 +36,9 @@ const TOOL_LABELS = {
     'move-node': 'Moved node',
     'delete-node': 'Deleted node',
     'select-node': 'Selected node',
+    'clone-node': 'Cloned node',
+    'clone-layout': 'Cloned layout',
+    'clone-traits': 'Cloned traits',
     undo: 'Undid last operation',
     'run-script': 'Ran script',
     'list-user-tools': 'Listed user tools',
@@ -46,7 +50,10 @@ const TOOL_LABELS = {
     'run-user-tool': 'Ran user tool',
     debug: 'Ran debug probe',
     'install-cli-skill': 'Installed Cast CLI skill',
+    update: 'Checked for Cast updates',
     exec: 'Ran tool',
+    cowork: 'Real-time coworking',
+
   },
 };
 const BRIDGE_PORT = process.env.CAST_BRIDGE_PORT || process.env.BRIDGE_PORT || '7777';
@@ -63,6 +70,8 @@ const BOOLEAN_FLAGS = new Set([
   'include-variants',
   'all-pages',
   'details',
+  'detail',
+  'check',
 ]);
 
 const COMMANDS = new Map([
@@ -74,9 +83,7 @@ const COMMANDS = new Map([
   ['get-memory', 'get-memory'],
   ['clear-memory', 'clear-memory'],
   ['clear-chat', 'clear-chat'],
-  ['get-supervision', 'get-supervision'],
-  ['clear-supervision-backlog', 'clear-supervision-backlog'],
-  ['clear-supervision', 'clear-supervision'],
+  ['clear-agent-corrections', 'clear-agent-corrections'],
   ['inspect', 'inspect'],
   ['get-variables', 'get-variables'],
   ['get-components', 'get-components'],
@@ -90,6 +97,9 @@ const COMMANDS = new Map([
   ['move-node', 'move-node'],
   ['delete-node', 'delete-node'],
   ['select-node', 'select-node'],
+  ['clone-node', 'clone-node'],
+  ['clone-layout', 'clone-layout'],
+  ['clone-traits', 'clone-traits'],
   ['undo', 'undo'],
   ['run-script', 'run-script'],
   ['list-user-tools', 'list-user-tools'],
@@ -101,8 +111,9 @@ const COMMANDS = new Map([
   ['run-user-tool', 'run-user-tool'],
   ['debug', 'debug'],
   ['install-cli-skill', 'install-cli-skill'],
+  ['update', 'update'],
   ['exec', 'exec'],
-  ['watch', 'watch'],
+  ['cowork', 'cowork'],
 ]);
 
 /** Prints usage. */
@@ -115,8 +126,8 @@ Usage:
   cast-to-figma get-variables [--collection NAME] [--query TEXT] [--include-values]
   cast-to-figma get-components [--query TEXT] [--page-id ID] [--all-pages] [--details]
   cast-to-figma get-skill
-  cast-to-figma get-memory [--limit N]
-  cast-to-figma get-supervision
+  cast-to-figma get-memory [--limit N] [--source user|agent|all] [--node-id ID] [--trait-id ID] [--event-id ID] [--detail]
+  cast-to-figma clear-agent-corrections
   cast-to-figma update-skill --skill-md-file FILE
   cast-to-figma update-text --node-id ID --text TEXT [--font-size N]
   cast-to-figma get-user-tools
@@ -124,14 +135,17 @@ Usage:
   cast-to-figma edit-user-tool --tool-id ID [--manifest-file FILE] [--source-file FILE]
   cast-to-figma delete-user-tool --tool-id ID
   cast-to-figma run-user-tool --tool-id ID --node-id ID [--params JSON]
+  cast-to-figma clone-node --node-id ID [--parent-id ID] [--x N] [--y N]
+  cast-to-figma clone-layout --from-node-id ID --to-node-id ID
+  cast-to-figma clone-traits --to-node-id ID [--from-node-id ID] [--traits fills,typography] [--trait-id ID]
   cast-to-figma exec --tool TOOL [--data JSON]
-  cast-to-figma watch [--instruction TEXT]
+  cast-to-figma cowork [--instruction TEXT] [--timeout 600] [--wait 3] [--target NODE_ID] [--json] [--agent ID]
   cast-to-figma install-cli-skill --folder {agent_skill_folder}
+  cast-to-figma update [--check]
 
 Common options:
   --agent ID       Agent id shown in Figma (default: cli)
   --json           Print raw JSON result
-  --no-ensure      Do not auto-start the bridge
 `);
 }
 
@@ -161,6 +175,95 @@ function expandHome(filePath) {
   if (filePath === '~') return process.env.HOME || filePath;
   if (filePath.startsWith('~/')) return path.join(process.env.HOME || '', filePath.slice(2));
   return filePath;
+}
+
+/** Normalizes a semver-ish string for comparison. */
+function normalizeVersion(version) {
+  return String(version || '').trim().replace(/^v/i, '');
+}
+
+/** Compares two semver-ish strings. */
+function compareVersions(a, b) {
+  const left = normalizeVersion(a).split(/[.-]/).map((part) => Number(part) || 0);
+  const right = normalizeVersion(b).split(/[.-]/).map((part) => Number(part) || 0);
+  for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
+    if ((left[i] || 0) > (right[i] || 0)) return 1;
+    if ((left[i] || 0) < (right[i] || 0)) return -1;
+  }
+  return 0;
+}
+
+/** Fetches JSON from GitHub with a CLI-friendly user agent. */
+async function fetchGithubJson(url) {
+  const res = await fetch(url, { headers: { 'User-Agent': `cast-to-figma/${PACKAGE.version}` } });
+  if (!res.ok) throw new Error(`GitHub request failed: ${res.status}`);
+  return res.json();
+}
+
+/** Reads the latest Cast version advertised by GitHub releases or main. */
+async function latestGithubVersion() {
+  try {
+    const release = await fetchGithubJson(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`);
+    const version = normalizeVersion(release.tag_name || release.name);
+    if (version) return version;
+  } catch (_) {}
+  try {
+    const pkg = await fetchGithubJson(`https://raw.githubusercontent.com/${GITHUB_REPO}/main/package.json`);
+    return normalizeVersion(pkg.version);
+  } catch (_) {
+    const pkg = await fetchGithubJson(`https://raw.githubusercontent.com/${GITHUB_REPO}/master/package.json`);
+    return normalizeVersion(pkg.version);
+  }
+}
+
+/** Updates this git checkout from GitHub when possible. */
+async function updateCast(opts) {
+  const latest = await latestGithubVersion().catch((error) => ({ error: error.message || String(error) }));
+  const latestVersion = typeof latest === 'string' ? latest : undefined;
+  const result = {
+    label: 'Checked Cast updates',
+    currentVersion: PACKAGE.version,
+    latestVersion,
+    updateAvailable: latestVersion ? compareVersions(PACKAGE.version, latestVersion) < 0 : null,
+    repository: `https://github.com/${GITHUB_REPO}`,
+  };
+
+  if (opts.check) return result;
+  if (!fs.existsSync(path.join(ROOT, '.git'))) {
+    result.label = 'Cast update available from GitHub';
+    result.command = `npm install -g git+https://github.com/${GITHUB_REPO}.git`;
+    result.pluginNote = 'After updating, reload the Figma development plugin or update NF Generate from Figma Community.';
+    return result;
+  }
+
+  const pull = spawnSync('git', ['pull', '--ff-only'], { cwd: ROOT, stdio: 'inherit' });
+  if (pull.status !== 0) throw new Error('git pull --ff-only failed');
+  const install = spawnSync('npm', ['install'], { cwd: ROOT, stdio: 'inherit' });
+  if (install.status !== 0) throw new Error('npm install failed');
+  const bridgeInstall = spawnSync('npm', ['install', '--omit=dev'], { cwd: path.join(ROOT, 'bridge'), stdio: 'inherit' });
+  if (bridgeInstall.status !== 0) throw new Error('bridge npm install failed');
+
+  result.label = 'Updated Cast from GitHub';
+  result.pluginNote = 'Reload the Figma development plugin or update NF Generate from Figma Community.';
+  return result;
+}
+
+/** Prints a compatibility warning when the connected plugin is stale. */
+function warnIfVersionMismatch(status) {
+  if (process.env.CAST_DISABLE_VERSION_CHECK === '1' || !status || !status.connected) return;
+  const pluginVersion = status.pluginVersion || 'unknown';
+  const pluginProtocol = status.pluginProtocolVersion || 'unknown';
+  if (status.versionMatch !== false && status.protocolMatch !== false && status.pluginVersion) return;
+  console.error(`Cast version warning: CLI ${PACKAGE.version}/protocol ${PROTOCOL_VERSION}, plugin ${pluginVersion}/protocol ${pluginProtocol}.`);
+  console.error('Run `cast-to-figma update`, then reload/update the Figma plugin from GitHub/Figma Community.');
+}
+
+/** Checks the connected plugin version without interrupting the requested command. */
+async function checkConnectedVersions() {
+  try {
+    const res = await fetch(`${BRIDGE}/status`);
+    if (res.ok) warnIfVersionMismatch(await res.json());
+  } catch (_) {}
 }
 
 /** Copies bundled CLI skill files into an agent skill folder. */
@@ -193,6 +296,8 @@ function buildData(tool, opts) {
   if (opts.data) return JSON.parse(opts.data);
   const data = {};
   if (opts['node-id']) data.nodeId = opts['node-id'];
+  if (opts['from-node-id']) data.fromNodeId = opts['from-node-id'];
+  if (opts['to-node-id']) data.toNodeId = opts['to-node-id'];
   if (opts['node-url']) data.nodeUrl = opts['node-url'];
   if (opts['page-id']) data.pageId = opts['page-id'];
   if (opts.collection) data.collection = opts.collection;
@@ -237,6 +342,12 @@ function buildData(tool, opts) {
   if (opts.manifest) data.manifest = JSON.parse(opts.manifest);
   if (opts['manifest-file']) data.manifest = JSON.parse(fs.readFileSync(opts['manifest-file'], 'utf8'));
   if (opts.limit) data.limit = Number(opts.limit);
+  if (opts.source) data.source = opts.source;
+  if (opts['trait-id']) data.traitId = opts['trait-id'];
+  if (opts['trait-ids']) data.traitIds = String(opts['trait-ids']).split(',').map((item) => item.trim()).filter(Boolean);
+  if (opts.traits) data.traits = String(opts.traits).split(',').map((item) => item.trim()).filter(Boolean);
+  if (opts['event-id']) data.eventId = opts['event-id'];
+  if (opts.detail) data.detail = true;
   if (opts.offset) data.offset = Number(opts.offset);
   if (opts['sample-limit']) data.sampleLimit = Number(opts['sample-limit']);
   if (opts['skill-md']) data.skillMd = opts['skill-md'];
@@ -254,7 +365,9 @@ function ensure(opts) {
 async function call(tool, data, agent) {
   if (tool === 'status') {
     const res = await fetch(`${BRIDGE}/status`);
-    return res.json();
+    const json = await res.json();
+    warnIfVersionMismatch(json);
+    return json;
   }
   const castTool = tool === 'exec' ? data.tool : tool;
   const castData = tool === 'exec' ? (data.data || {}) : data;
@@ -277,6 +390,10 @@ function summary(tool, result) {
   if (tool === 'status') {
     const suffix = result.port ? ` on port ${result.port}` : '';
     return result.connected ? `Cast plugin connected${suffix}` : `Cast plugin not connected${suffix}`;
+  }
+  if (tool === 'update') {
+    if (result.updateAvailable === false) return `Cast is current (${result.currentVersion})`;
+    return result.label || 'Checked Cast updates';
   }
   if (result && typeof result.label === 'string') return result.label;
   return TOOL_LABELS.done[tool] || `Ran ${tool}`;
@@ -353,12 +470,46 @@ function printHuman(tool, result) {
       if (artifact.error) console.log(`  error: ${artifact.error}`);
     }
   }
+  if (tool === 'status') {
+    console.log(`cli: ${result.cliVersion || PACKAGE.version}`);
+    console.log(`bridge: ${result.bridgeVersion || 'unknown'}`);
+    console.log(`plugin: ${result.pluginVersion || 'unknown'}`);
+    console.log(`protocol: cli ${result.protocolVersion || PROTOCOL_VERSION}, plugin ${result.pluginProtocolVersion || 'unknown'}`);
+    if (result.versionMatch === false || result.protocolMatch === false || (result.connected && !result.pluginVersion)) console.log('version: mismatch');
+  }
+  if (tool === 'update') {
+    if (result.latestVersion) console.log(`latest: ${result.latestVersion}`);
+    if (result.command) console.log(`command: ${result.command}`);
+    if (result.pluginNote) console.log(`plugin: ${result.pluginNote}`);
+  }
   if (result.pageName) console.log(`page: ${result.pageName}`);
   if (result.summary && tool === 'get-variables') console.log(`variables: ${result.summary.variableCount} across ${result.summary.collectionCount} collections`);
   if (result.summary && tool === 'get-components') console.log(`components: ${result.summary.componentCount}, sets: ${result.summary.componentSetCount}, pages: ${result.summary.pageCount}`);
+  if (tool === 'get-memory' && result.user) {
+    const lines = Array.isArray(result.user.summary) ? result.user.summary : [];
+    if (lines.length > 0) console.log(`\n${lines.join('\n')}`);
+    else if (Array.isArray(result.user.nodes)) console.log(`memory nodes: ${result.user.nodes.map((n) => n.nodeId).join(', ') || '(none)'}`);
+  }
   if (Array.isArray(result.pages)) console.log(`pages: ${result.pages.map((p) => p.name || p.pageName).join(', ')}`);
   if (Array.isArray(result.tools)) console.log(`tools: ${result.tools.map((t) => t.id || t.name).join(', ') || '(none)'}`);
   if (result.contextMd) console.log(`\n${result.contextMd}`);
+  printRecall(result.recall);
+}
+
+/** Prints the auto-attached recall envelope (recent memory + correction summaries). */
+function printRecall(recall) {
+  if (!recall || typeof recall !== 'object') return;
+  const mem = Array.isArray(recall.memory?.summary) ? recall.memory.summary : [];
+  const corr = Array.isArray(recall.corrections?.summary) ? recall.corrections.summary : [];
+  if (mem.length === 0 && corr.length === 0) return;
+  if (mem.length > 0) {
+    console.log('\nrecall — recent designer memory:');
+    for (const line of mem.slice(-10)) console.log(`  ${line}`);
+  }
+  if (corr.length > 0) {
+    console.log('\nrecall — pending agent corrections:');
+    for (const line of corr.slice(-10)) console.log(`  ${line}`);
+  }
 }
 
 /** Main CLI entrypoint. */
@@ -371,8 +522,8 @@ async function main() {
   }
   if (!COMMANDS.has(command)) throw new Error(`Unknown Cast command: ${command}`);
   const castCommand = COMMANDS.get(command);
-  if (castCommand === 'watch') {
-    const child = spawnSync(WATCH, process.argv.slice(3), { stdio: 'inherit' });
+  if (castCommand === 'cowork') {
+    const child = spawnSync(COWORK, process.argv.slice(3), { stdio: 'inherit' });
     process.exit(child.status === null ? 1 : child.status);
   }
   if (command === 'install-cli-skill') {
@@ -381,7 +532,14 @@ async function main() {
     else printHuman(command, result);
     return;
   }
+  if (command === 'update') {
+    const result = await updateCast(opts);
+    if (opts.json) console.log(JSON.stringify(result, null, 2));
+    else printHuman(command, result);
+    return;
+  }
   ensure(opts);
+  if (castCommand !== 'status') await checkConnectedVersions();
   const data = buildData(castCommand, opts);
   const result = await call(castCommand, data, opts.agent || 'cli');
   const output = castCommand === 'inspect' ? attachVisualArtifacts(result, opts) : result;
