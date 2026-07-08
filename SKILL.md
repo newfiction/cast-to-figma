@@ -45,13 +45,14 @@ Use this workflow for every Cast design task:
    - If changing existing frames, run `inspect` first.
    - Prefer wrapped tools: `get-variables`, `set-variables`, `set-styles`, `get-components`, `update-properties`, `resize-node`, `update-fills`, `update-text`, `set-layout`, `clone-node`, `clone-layout`, `clone-traits`, `create-node`, `move-node`, `delete-node`, `select-node`.
    - Use `run-user-tool` when a registered user tool matches the task. It runs a trusted script against a scoped `nodeId` plus `params`.
-   - Use `run-script` only when wrapped tools and registered user tools are insufficient; keep it scoped to the current step.
+   - Use `run-script` only when wrapped tools and registered user tools are insufficient; keep it scoped to the current step and always pass a required short `--reason` label of 6 words or fewer, e.g. `--reason "Created 10 frames"`. For anything multiline or quote-heavy, write a temp `.js` file and call `run-script --source-file /tmp/name.js` instead of embedding code in the shell.
    - Inspect the screenshot after each visual edit. Screenshot verification is mandatory.
    - If wrong, fix the same step and inspect again. Use `undo` immediately for bad risky edits.
 
 4. **Continue or finish**
    - Continue only after the current step passes visual verification.
-   - At the end, call `update-skill` only if there is reusable file-specific learning.
+   - After finishing any task or task bundle, analyze the workflow and decide whether any reusable process, correction, or file-specific pattern could improve the file skill.
+   - Ask the user if they want to add that learning before calling `update-skill`; never update the skill automatically.
    - After the task is done, start coworking unless the user asked not to.
 
 ## Coworking
@@ -361,12 +362,14 @@ cast-to-figma run-user-tool --agent <agent-id> --tool-id generate-quadtree --nod
 Executes JavaScript inside the plugin Figma context. `source` is wrapped in `async function() { ... }`; use `return` to send JSON-safe data back.
 
 ```bash
-cast-to-figma run-script --agent <agent-id> --reason "Checked current Figma page name before editing" --source "return figma.currentPage.name;"
+cast-to-figma run-script --agent <agent-id> --reason "Checked page name" --source "return figma.currentPage.name;"
+cast-to-figma run-script --agent <agent-id> --reason "Systemized button variants" --source-file /tmp/cast_button_systemize.js
 ```
 
 Notes:
-- Write `--reason` as a descriptive completed activity in past tense because it appears in the Cast UI feed, e.g. `"Extracted latest link icon vector geometry from the selected component"`.
-- `await` works inside `source`.
+- `--reason` is required and appears in the Cast UI feed instead of a generic “Ran script” row. Write it as a concise completed activity: max 6 words and 64 characters, e.g. `"Created 10 frames"`.
+- Prefer `--source-file` for multiline scripts, quote-heavy code, JSON literals, template strings, or any script longer than a one-liner. This avoids shell interpolation/quoting failures; write the JavaScript to `/tmp/...js` and pass the file path.
+- `await` works inside `source` / `--source-file`.
 - Return plain JSON data, not live node proxies.
 - Use for discovery, reads, and targeted mutations.
 - Moving children out of a group may delete/alter the group; do not remove stale nodes blindly.

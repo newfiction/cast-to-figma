@@ -71,7 +71,7 @@ CAST_BRIDGE_PORT=7778 cast-to-figma status
 - `create-node`, `move-node`, `delete-node`, `select-node` — manipulate nodes
 - `list-user-tools`, `get-user-tools`, `get-user-tool` — inspect file-local procedural tools
 - `add-user-tool`, `edit-user-tool`, `delete-user-tool`, `run-user-tool` — manage and execute file-local procedural tools
-- `run-script` — execute scoped JavaScript in the Figma plugin context
+- `run-script` — execute scoped JavaScript with a required short `--reason` feed label
 - `undo` — undo the last Figma operation
 - `cowork` — real-time coworking: wait for one designer cycle, print memory/corrections first, then exit
 - `install-cli-skill --folder {agent_skill_folder}` — install the bundled CLI skill into an agent skill folder
@@ -114,7 +114,8 @@ Common node-edit tools resolve targets as `nodeId → current selection → rece
 - inspect selected nodes and screenshots before visual edits
 - read file-local skill, hyperlink memory, user tools, and agent-memory context
 - make small, verifiable design changes
-- use wrapped Cast tools before raw scripts
+- use wrapped Cast tools before raw scripts; raw scripts require a ≤6-word reason label
+- ask before adding reusable workflow learnings to the file skill
 - learn from designer corrections
 - start coworking for designer change cycles after completing work
 

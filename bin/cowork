@@ -106,8 +106,12 @@ function printCowork(event) {
   const file = saveArtifact('cowork', event);
   const memory = event.recall?.memory?.summary || [];
   const corrections = event.recall?.corrections?.summary || [];
+  const inspectTargets = Array.isArray(event.inspectTargets) ? event.inspectTargets : [];
   process.stdout.write('Real-time coworking cycle\n');
   process.stdout.write(`event: ${file}\n`);
+  process.stdout.write('\nInspect targets:\n');
+  if (inspectTargets.length) inspectTargets.slice(0, 8).forEach((target) => process.stdout.write(`  ${target.nodeId}${target.name ? ` "${target.name}"` : ''}${target.reason ? ` — ${target.reason}` : ''}\n`));
+  else process.stdout.write('  none\n');
   process.stdout.write('\nMemory summary:\n');
   if (memory.length) memory.slice(-10).forEach((line) => process.stdout.write(`  ${line}\n`));
   else process.stdout.write('  none\n');

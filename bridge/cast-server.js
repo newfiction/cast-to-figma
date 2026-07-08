@@ -29,6 +29,14 @@ let coworkWait;
 let coworkTarget;
 let coworkCancelRequested = false;
 
+/** Clears bridge cowork state so stale watcher rows are not replayed to future plugin sessions. */
+function clearCoworking() {
+  coworking = false;
+  coworkInstruction = undefined;
+  coworkWait = undefined;
+  coworkTarget = undefined;
+}
+
 /** Sends a JSON payload over a WebSocket without throwing. */
 function send(socket, payload) {
   try { socket.send(JSON.stringify(payload)); } catch (_) {}
@@ -179,11 +187,15 @@ function createHttpBridge() {
       try { parsed = await readJsonBody(req); }
       catch (error) { writeJson(res, 400, { error: 'Invalid JSON body' }); return; }
       const state = parsed && parsed.state === 'start' ? 'start' : 'stop';
-      coworking = state === 'start';
-      coworkInstruction = state === 'start' && typeof parsed.instruction === 'string' ? parsed.instruction : undefined;
-      coworkWait = state === 'start' && typeof parsed.wait === 'number' ? parsed.wait : undefined;
-      coworkTarget = state === 'start' && typeof parsed.target === 'string' ? parsed.target : undefined;
-      if (state === 'start') coworkCancelRequested = false;
+      if (state === 'start') {
+        coworking = true;
+        coworkInstruction = typeof parsed.instruction === 'string' ? parsed.instruction : undefined;
+        coworkWait = typeof parsed.wait === 'number' ? parsed.wait : undefined;
+        coworkTarget = typeof parsed.target === 'string' ? parsed.target : undefined;
+        coworkCancelRequested = false;
+      } else {
+        clearCoworking();
+      }
       if (activePluginSocket && activePluginSocket.readyState === WebSocket.OPEN) {
         send(activePluginSocket, { type: 'cowork', state, instruction: coworkInstruction, wait: coworkWait, target: coworkTarget });
       }
@@ -224,7 +236,6 @@ function createHttpBridge() {
     }
     activePluginSocket = socket;
     send(socket, { type: 'active' });
-    if (coworking) send(socket, { type: 'cowork', state: 'start', instruction: coworkInstruction, wait: coworkWait, target: coworkTarget });
     console.error(`[cast] plugin connected (${pluginSockets.size} total)`);
 
     socket.on('message', (buf) => {
@@ -233,6 +244,7 @@ function createHttpBridge() {
 
       if (msg && msg.type === 'cancel-cowork') {
         coworkCancelRequested = true;
+        clearCoworking();
         return;
       }
 

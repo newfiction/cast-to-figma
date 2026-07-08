@@ -59,6 +59,8 @@ const TOOL_LABELS = {
 const BRIDGE_PORT = process.env.CAST_BRIDGE_PORT || process.env.BRIDGE_PORT || '7777';
 const BRIDGE = process.env.CAST_BRIDGE_URL || `http://127.0.0.1:${BRIDGE_PORT}`;
 const INSPECT_INLINE_LIMIT_BYTES = Number(process.env.CAST_INSPECT_INLINE_LIMIT_BYTES || 750000);
+const RUN_SCRIPT_REASON_MAX_WORDS = 6;
+const RUN_SCRIPT_REASON_MAX_CHARS = 64;
 
 const BOOLEAN_FLAGS = new Set([
   'json',
@@ -135,6 +137,7 @@ Usage:
   cast-to-figma edit-user-tool --tool-id ID [--manifest-file FILE] [--source-file FILE]
   cast-to-figma delete-user-tool --tool-id ID
   cast-to-figma run-user-tool --tool-id ID --node-id ID [--params JSON]
+  cast-to-figma run-script --reason "Created 10 frames" --source-file FILE
   cast-to-figma clone-node --node-id ID [--parent-id ID] [--x N] [--y N]
   cast-to-figma clone-layout --from-node-id ID --to-node-id ID
   cast-to-figma clone-traits --to-node-id ID [--from-node-id ID] [--traits fills,typography] [--trait-id ID]
@@ -175,6 +178,26 @@ function expandHome(filePath) {
   if (filePath === '~') return process.env.HOME || filePath;
   if (filePath.startsWith('~/')) return path.join(process.env.HOME || '', filePath.slice(2));
   return filePath;
+}
+
+/** Returns a normalized run-script reason or throws a user-facing validation error. */
+function validateRunScriptReason(reason) {
+  if (typeof reason !== 'string' || !reason.trim()) {
+    throw new Error('run-script requires --reason, max 6 words, e.g. "Created 10 frames"');
+  }
+  const trimmed = reason.trim().replace(/\s+/g, ' ');
+  if (trimmed.length > RUN_SCRIPT_REASON_MAX_CHARS) throw new Error(`run-script --reason is too long (max ${RUN_SCRIPT_REASON_MAX_CHARS} characters)`);
+  if (trimmed.split(' ').filter(Boolean).length > RUN_SCRIPT_REASON_MAX_WORDS) throw new Error(`run-script --reason is too long (max ${RUN_SCRIPT_REASON_MAX_WORDS} words)`);
+  return trimmed;
+}
+
+/** Validates external run-script calls before they reach the Figma plugin. */
+function validateRunScriptData(tool, data) {
+  if (tool === 'run-script') data.reason = validateRunScriptReason(data.reason);
+  if (tool === 'exec' && data?.tool === 'run-script') {
+    data.data = data.data || {};
+    data.data.reason = validateRunScriptReason(data.data.reason);
+  }
 }
 
 /** Normalizes a semver-ish string for comparison. */
@@ -538,9 +561,10 @@ async function main() {
     else printHuman(command, result);
     return;
   }
+  const data = buildData(castCommand, opts);
+  validateRunScriptData(castCommand, data);
   ensure(opts);
   if (castCommand !== 'status') await checkConnectedVersions();
-  const data = buildData(castCommand, opts);
   const result = await call(castCommand, data, opts.agent || 'cli');
   const output = castCommand === 'inspect' ? attachVisualArtifacts(result, opts) : result;
   if (opts.json) console.log(JSON.stringify(output, null, 2));
