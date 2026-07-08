@@ -96,7 +96,7 @@ function executeCastTool(request) {
     return Promise.reject(fail(
       'plugin_not_connected',
       'Figma Cast plugin is not connected',
-      'Open Figma → Plugins → Development → Cast, then try again.',
+      'Open Figma → Plugins → Cast, then try again.',
     ));
   }
 

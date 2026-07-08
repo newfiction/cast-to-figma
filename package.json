@@ -1,6 +1,6 @@
 {
   "name": "@newfiction/cast-to-figma",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Local CLI, bridge, and agent skill for controlling Figma through the Cast plugin.",
   "license": "MIT",
   "repository": {

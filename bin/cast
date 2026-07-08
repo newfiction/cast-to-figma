@@ -255,7 +255,7 @@ async function updateCast(opts) {
   if (!fs.existsSync(path.join(ROOT, '.git'))) {
     result.label = 'Cast update available from GitHub';
     result.command = `npm install -g git+https://github.com/${GITHUB_REPO}.git`;
-    result.pluginNote = 'After updating, reload the Figma development plugin or update NF Generate from Figma Community.';
+    result.pluginNote = 'After updating, reload the Cast plugin.';
     return result;
   }
 
@@ -267,7 +267,7 @@ async function updateCast(opts) {
   if (bridgeInstall.status !== 0) throw new Error('bridge npm install failed');
 
   result.label = 'Updated Cast from GitHub';
-  result.pluginNote = 'Reload the Figma development plugin or update NF Generate from Figma Community.';
+  result.pluginNote = 'Reload the Cast plugin.';
   return result;
 }
 
@@ -278,7 +278,7 @@ function warnIfVersionMismatch(status) {
   const pluginProtocol = status.pluginProtocolVersion || 'unknown';
   if (status.versionMatch !== false && status.protocolMatch !== false && status.pluginVersion) return;
   console.error(`Cast version warning: CLI ${PACKAGE.version}/protocol ${PROTOCOL_VERSION}, plugin ${pluginVersion}/protocol ${pluginProtocol}.`);
-  console.error('Run `cast-to-figma update`, then reload/update the Figma plugin from GitHub/Figma Community.');
+  console.error('Run `cast-to-figma update`, then reload the Cast plugin.');
 }
 
 /** Checks the connected plugin version without interrupting the requested command. */
