@@ -1,4 +1,4 @@
-![Cast to Figma](assets/cast-cover.png)
+![Cast to Figma](https://github.com/newfiction/cast-to-figma/releases/download/assets/cast-cover.png)
 
 # Cast to Figma
 
@@ -108,7 +108,7 @@ Common node-edit tools resolve targets as `nodeId → current selection → rece
 
 ## Agent skill
 
-![Scheme](assets/cast-scheme.png)
+![Scheme](https://github.com/newfiction/cast-to-figma/releases/download/assets/cast-scheme.png)
 
 *The installed skill instructs agents to*:
 - inspect selected nodes and screenshots before visual edits
