@@ -104,11 +104,14 @@ function printCowork(event) {
   }
 
   const file = saveArtifact('cowork', event);
+  const designSystem = typeof event.recall?.designSystem === 'string' ? event.recall.designSystem : '';
   const memory = event.recall?.memory?.summary || [];
   const corrections = event.recall?.corrections?.summary || [];
   const inspectTargets = Array.isArray(event.inspectTargets) ? event.inspectTargets : [];
   process.stdout.write('Real-time coworking cycle\n');
   process.stdout.write(`event: ${file}\n`);
+  process.stdout.write('\nDesign system:\n');
+  process.stdout.write(`  ${designSystem || 'none'}\n`);
   process.stdout.write('\nInspect targets:\n');
   if (inspectTargets.length) inspectTargets.slice(0, 8).forEach((target) => process.stdout.write(`  ${target.nodeId}${target.name ? ` "${target.name}"` : ''}${target.reason ? ` — ${target.reason}` : ''}\n`));
   else process.stdout.write('  none\n');

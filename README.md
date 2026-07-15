@@ -40,16 +40,19 @@ cast-to-figma install-cli-skill --folder ~/.claude/skills
 cast-to-figma status
 cast-to-figma ping
 cast-to-figma inspect --depth 3 --scale 1
+cast-to-figma get-design-system
 cast-to-figma get-memory --limit 10
 cast-to-figma get-memory --trait-id event_123_trait_fills --detail
-cast-to-figma get-variables --query accent
-cast-to-figma get-components --query button
+cast-to-figma get-variables --query accent --json
+cast-to-figma set-variables --data '{"collections":[]}' --json
+cast-to-figma set-styles --data '{"text":[]}' --json
+cast-to-figma get-components --query button --json
 cast-to-figma update-text --node-id 12:34 --text "Hello"
 cast-to-figma cowork
 cast-to-figma cowork --instruction="Apply the same correction to the remaining cards" --timeout 600 --wait 3
 ```
 
-The CLI auto-starts a local bridge on `127.0.0.1:7777`. Override the port when needed:
+The CLI auto-starts a local bridge on `127.0.0.1:7777`. Human output includes complete tool data; use `--json` for reads and scripts when exact, machine-readable values matter. Override the port when needed:
 
 ```bash
 CAST_BRIDGE_PORT=7778 cast-to-figma status
@@ -60,7 +63,9 @@ CAST_BRIDGE_PORT=7778 cast-to-figma status
 - `status` — check bridge/plugin connection
 - `ping` — return page/file metadata
 - `inspect` — inspect node architecture and save a screenshot artifact
+- `get-design-system` — list all local token, component, and component-set names/IDs
 - `get-variables` — list local variables with lean summaries and optional drill-down filters
+- `set-variables`, `set-styles` — create or update local variables and styles from `--data` JSON
 - `get-components` — list local components/component sets with lean summaries and optional drill-down filters
 - `list-pages` — list open file pages
 - `get-skill`, `update-skill` — read/write file-local agent skill markdown

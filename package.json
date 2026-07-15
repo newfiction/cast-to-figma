@@ -1,6 +1,6 @@
 {
   "name": "@newfiction/cast-to-figma",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Local CLI, bridge, and agent skill for controlling Figma through the Cast plugin.",
   "license": "MIT",
   "repository": {
@@ -21,14 +21,15 @@
     "bridge/ensure.sh",
     "bridge/package.json",
     "bridge/package-lock.json",
-    "assets/cover.png",
-    "assets/scheme.png",
+    "assets/cast-cover.png",
+    "assets/cast-scheme.png",
     "SKILL.md",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
     "check": "node --check bin/cast && node --check bin/cowork && node --check bridge/cast-server.js",
+    "test": "node --test bin/cast.test.js",
     "pack:dry": "npm pack --dry-run"
   },
   "dependencies": {

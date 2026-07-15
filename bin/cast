@@ -25,7 +25,10 @@ const TOOL_LABELS = {
     'clear-chat': 'Cleared chat',
     'clear-agent-corrections': 'Cleared agent corrections',
     inspect: 'Inspected selection',
+    'get-design-system': 'Listed design system',
     'get-variables': 'Listed variables',
+    'set-variables': 'Set variables',
+    'set-styles': 'Set styles',
     'get-components': 'Listed components',
     'update-properties': 'Updated properties',
     'resize-node': 'Resized node',
@@ -87,7 +90,10 @@ const COMMANDS = new Map([
   ['clear-chat', 'clear-chat'],
   ['clear-agent-corrections', 'clear-agent-corrections'],
   ['inspect', 'inspect'],
+  ['get-design-system', 'get-design-system'],
   ['get-variables', 'get-variables'],
+  ['set-variables', 'set-variables'],
+  ['set-styles', 'set-styles'],
   ['get-components', 'get-components'],
   ['get-componenents', 'get-components'],
   ['update-properties', 'update-properties'],
@@ -122,10 +128,16 @@ const COMMANDS = new Map([
 function usage() {
   console.log(`Cast CLI
 
-Usage:
+Available commands:
+  ${Array.from(COMMANDS.keys()).filter((name) => name !== 'get-componenents').join('\n  ')}
+
+Usage examples:
   cast-to-figma status
   cast-to-figma inspect [--node-id ID] [--node-url URL] [--depth N] [--scale N] [--no-inline-screenshot]
+  cast-to-figma get-design-system
   cast-to-figma get-variables [--collection NAME] [--query TEXT] [--include-values]
+  cast-to-figma set-variables --data JSON
+  cast-to-figma set-styles --data JSON
   cast-to-figma get-components [--query TEXT] [--page-id ID] [--all-pages] [--details]
   cast-to-figma get-skill
   cast-to-figma get-memory [--limit N] [--source user|agent|all] [--node-id ID] [--trait-id ID] [--event-id ID] [--detail]
@@ -148,7 +160,7 @@ Usage:
 
 Common options:
   --agent ID       Agent id shown in Figma (default: cli)
-  --json           Print raw JSON result
+  --json           Print complete machine-readable JSON (recommended for reads and scripts)
 `);
 }
 
@@ -278,7 +290,11 @@ function warnIfVersionMismatch(status) {
   const pluginProtocol = status.pluginProtocolVersion || 'unknown';
   if (status.versionMatch !== false && status.protocolMatch !== false && status.pluginVersion) return;
   console.error(`Cast version warning: CLI ${PACKAGE.version}/protocol ${PROTOCOL_VERSION}, plugin ${pluginVersion}/protocol ${pluginProtocol}.`);
-  console.error('Run `cast-to-figma update`, then reload the Cast plugin.');
+  if (pluginVersion !== 'unknown' && compareVersions(PACKAGE.version, pluginVersion) > 0) {
+    console.error('Reload or update the Cast plugin to the matching release.');
+  } else {
+    console.error('Run `cast-to-figma update`, then reload the Cast plugin.');
+  }
 }
 
 /** Checks the connected plugin version without interrupting the requested command. */
@@ -293,7 +309,7 @@ async function checkConnectedVersions() {
 function installCliSkill(opts) {
   const agentSkillFolder = path.resolve(expandHome(opts.folder || path.join(process.env.HOME || '.', '.agents', 'skills')));
   const target = path.join(agentSkillFolder, 'cast-to-figma');
-  const files = ['SKILL.md', 'README.md', 'LICENSE', path.join('assets', 'cover.png'), path.join('assets', 'scheme.png')];
+  const files = ['SKILL.md', 'README.md', 'LICENSE', path.join('assets', 'cast-cover.png'), path.join('assets', 'cast-scheme.png')];
 
   fs.mkdirSync(target, { recursive: true });
   for (const relativePath of files) {
@@ -338,6 +354,8 @@ function buildData(tool, opts) {
   if (opts.height) data.height = Number(opts.height);
   if (opts.opacity) data.opacity = Number(opts.opacity);
   if (opts.visible) data.visible = opts.visible !== 'false';
+  if (opts.zoom !== undefined) data.zoom = opts.zoom !== 'false';
+  if (opts['include-source'] !== undefined) data.includeSource = opts['include-source'] !== 'false';
   if (opts.rotation) data.rotation = Number(opts.rotation);
   if (opts.index) data.index = Number(opts.index);
   if (opts.parentId || opts['parent-id']) data.parentId = opts.parentId || opts['parent-id'];
@@ -469,14 +487,41 @@ function attachVisualArtifacts(result, opts) {
   return result;
 }
 
-/** Prints readable result. */
+/** Formats a JSON-safe tool value for terminal output. */
+function formatHumanValue(value) {
+  if (typeof value === 'string') return value;
+  const encoded = JSON.stringify(value, null, 2);
+  return encoded === undefined ? String(value) : encoded;
+}
+
+/** Returns complete tool payload lines while omitting separately printed UI metadata. */
+function humanDataLines(tool, result) {
+  if (tool === 'status' || tool === 'update' || tool === 'install-cli-skill') return [];
+  if (tool === 'run-script' && result && Object.prototype.hasOwnProperty.call(result, 'result')) {
+    const value = formatHumanValue(result.result);
+    return value.includes('\n') ? ['return:', value] : [`return: ${value}`];
+  }
+  if (!result || typeof result !== 'object') {
+    const value = formatHumanValue(result);
+    return value.includes('\n') ? ['data:', value] : [`data: ${value}`];
+  }
+
+  const payload = Object.fromEntries(Object.entries(result).filter(([key]) => (
+    key !== 'recall' && key !== 'visualArtifacts' && key !== 'label'
+  )));
+  const keys = Object.keys(payload);
+  if (keys.length === 0) return [];
+  const value = keys.length === 1 && keys[0] === 'result' ? payload.result : payload;
+  const formatted = formatHumanValue(value);
+  return formatted.includes('\n') ? ['data:', formatted] : [`data: ${formatted}`];
+}
+
+/** Prints readable output without dropping the complete tool payload. */
 function printHuman(tool, result) {
   console.log(`Cast ${tool}`);
   console.log(`✓ ${summary(tool, result)}`);
+  for (const line of humanDataLines(tool, result)) console.log(line);
 
-  const node = result.node || result.nodes?.[0]?.node || result;
-  if (node && node.id && node.name) console.log(`node: ${node.type || 'NODE'} ${node.id} “${node.name}”`);
-  if (node && node.width && node.height) console.log(`size: ${Math.round(node.width)} × ${Math.round(node.height)}`);
   const screenshotPath = result.screenshotPath || result.nodes?.[0]?.screenshotPath;
   if (screenshotPath) console.log(`screenshot: ${screenshotPath}`);
   if (tool === 'inspect' && Array.isArray(result.visualArtifacts) && result.visualArtifacts.length > 0) {
@@ -505,26 +550,17 @@ function printHuman(tool, result) {
     if (result.command) console.log(`command: ${result.command}`);
     if (result.pluginNote) console.log(`plugin: ${result.pluginNote}`);
   }
-  if (result.pageName) console.log(`page: ${result.pageName}`);
-  if (result.summary && tool === 'get-variables') console.log(`variables: ${result.summary.variableCount} across ${result.summary.collectionCount} collections`);
-  if (result.summary && tool === 'get-components') console.log(`components: ${result.summary.componentCount}, sets: ${result.summary.componentSetCount}, pages: ${result.summary.pageCount}`);
-  if (tool === 'get-memory' && result.user) {
-    const lines = Array.isArray(result.user.summary) ? result.user.summary : [];
-    if (lines.length > 0) console.log(`\n${lines.join('\n')}`);
-    else if (Array.isArray(result.user.nodes)) console.log(`memory nodes: ${result.user.nodes.map((n) => n.nodeId).join(', ') || '(none)'}`);
-  }
-  if (Array.isArray(result.pages)) console.log(`pages: ${result.pages.map((p) => p.name || p.pageName).join(', ')}`);
-  if (Array.isArray(result.tools)) console.log(`tools: ${result.tools.map((t) => t.id || t.name).join(', ') || '(none)'}`);
-  if (result.contextMd) console.log(`\n${result.contextMd}`);
   printRecall(result.recall);
 }
 
-/** Prints the auto-attached recall envelope (recent memory + correction summaries). */
+/** Prints the auto-attached recall envelope (design system, memory, and corrections). */
 function printRecall(recall) {
   if (!recall || typeof recall !== 'object') return;
+  const designSystem = typeof recall.designSystem === 'string' ? recall.designSystem : '';
   const mem = Array.isArray(recall.memory?.summary) ? recall.memory.summary : [];
   const corr = Array.isArray(recall.corrections?.summary) ? recall.corrections.summary : [];
-  if (mem.length === 0 && corr.length === 0) return;
+  if (!designSystem && mem.length === 0 && corr.length === 0) return;
+  if (designSystem) console.log(`\nrecall — design system:\n  ${designSystem}`);
   if (mem.length > 0) {
     console.log('\nrecall — recent designer memory:');
     for (const line of mem.slice(-10)) console.log(`  ${line}`);
@@ -571,7 +607,11 @@ async function main() {
   else printHuman(castCommand, output);
 }
 
-main().catch((error) => {
-  console.error(`Cast error: ${error.message || String(error)}`);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(`Cast error: ${error.message || String(error)}`);
+    process.exit(1);
+  });
+}
+
+module.exports = { COMMANDS, formatHumanValue, humanDataLines };

@@ -1,8 +1,8 @@
 ---
 name: cast-to-figma
 description: Use Cast to execute Figma tools through a local bridge.
-version: 0.1.0
-requiresCli: ">=0.1.0"
+version: 0.2.2
+requiresCli: ">=0.2.2"
 cliPackage: "@newfiction/cast-to-figma"
 cliBinary: "cast-to-figma"
 ---
@@ -25,15 +25,17 @@ The CLI auto-starts the local bridge when needed. The bridge defaults to port `7
 
 Pass `--agent <agent-id>` when useful so the Cast panel can show which harness is driving Figma. Suggested ids include `pi`, `openai`, `gpt`, `claude`, and `gemini`.
 
+Use `--json` for reads and scripts whenever exact, machine-readable values matter. Human output includes complete data too, but `--json` is the stable programmatic interface.
+
 ## Workflow
 
 Use this workflow for every Cast design task:
 
 1. **Read file context**
-   - Run `get-skill`, `get-memory`, and `get-user-tools`.
+   - Run `get-skill`, `get-memory`, `get-design-system` and `get-user-tools`.
    - If the user says “this”, “that”, “these”, “here”, “selected”, “current”, or “what I changed”, run default `inspect` before planning. It resolves `nodeUrl` → `nodeId` → current selection → recent user-memory edited nodes.
-   - In fresh files or empty skills, target selected/recently edited frames first. If no selection exists, use `get-memory --limit 20`; do not search the whole file unless needed or asked.
-   - If recalled correction summaries exist, treat them as background unless the user asks to learn from or clear them.
+   - Target selected/recently edited frames first. If no selection exists, use the nodes from the memory digest. Do not search the whole file unless needed or asked.
+   - If recalled correction summaries exist, treat them as background unless the user asks to learn ("Learn") from or clear them.
 
 2. **Plan small steps**
    - Split the task into discrete, inspectable edits.
@@ -43,7 +45,7 @@ Use this workflow for every Cast design task:
 
 3. **Execute one step**
    - If changing existing frames, run `inspect` first.
-   - Prefer wrapped tools: `get-variables`, `set-variables`, `set-styles`, `get-components`, `update-properties`, `resize-node`, `update-fills`, `update-text`, `set-layout`, `clone-node`, `clone-layout`, `clone-traits`, `create-node`, `move-node`, `delete-node`, `select-node`.
+   - Prefer wrapped tools: `get-design-system`, `get-variables`, `set-variables`, `set-styles`, `get-components`, `update-properties`, `resize-node`, `update-fills`, `update-text`, `set-layout`, `clone-node`, `clone-layout`, `clone-traits`, `create-node`, `move-node`, `delete-node`, `select-node`.
    - Use `run-user-tool` when a registered user tool matches the task. It runs a trusted script against a scoped `nodeId` plus `params`.
    - Use `run-script` only when wrapped tools and registered user tools are insufficient; keep it scoped to the current step and always pass a required short `--reason` label of 6 words or fewer, e.g. `--reason "Created 10 frames"`. For anything multiline or quote-heavy, write a temp `.js` file and call `run-script --source-file /tmp/name.js` instead of embedding code in the shell.
    - Inspect the screenshot after each visual edit. Screenshot verification is mandatory.
@@ -70,7 +72,7 @@ cast-to-figma cowork --agent pi --instruction="Apply the same correction to the 
 
 Parameters: `--instruction`, `--timeout` (default 600 seconds), `--wait` (default 3 seconds after designer stops editing), `--target`, `--json`, and `--agent`.
 
-On every completed cycle, Cast returns lightweight recalled context. There is no built-in correction-first plan; corrections are just pending context unless the user requests action.
+On every completed cycle, Cast returns lightweight recalled context. There is no built-in correction-first plan; corrections are just pending context unless the user requests action ("Learn").
 
 ## Tools
 
@@ -128,6 +130,14 @@ cast-to-figma inspect --agent <agent-id> --node-id 12:34 --mode default --depth 
 ```
 
 Use `--mode deep` for more readable Figma properties. If a `nodeUrl` points to a different file, open that file in Figma first.
+
+### get-design-system
+
+Lists every local design token, component, and component set across all pages as minimal `[name,id]` tuples. Variants use `Set/Variant` names. A compact form is included automatically in tool and cowork recall.
+
+```bash
+cast-to-figma get-design-system --agent <agent-id>
+```
 
 ### get-variables
 
@@ -370,7 +380,7 @@ Notes:
 - `--reason` is required and appears in the Cast UI feed instead of a generic “Ran script” row. Write it as a concise completed activity: max 6 words and 64 characters, e.g. `"Created 10 frames"`.
 - Prefer `--source-file` for multiline scripts, quote-heavy code, JSON literals, template strings, or any script longer than a one-liner. This avoids shell interpolation/quoting failures; write the JavaScript to `/tmp/...js` and pass the file path.
 - `await` works inside `source` / `--source-file`.
-- Return plain JSON data, not live node proxies.
+- Return plain JSON data, not live node proxies. Add `--json` when exact programmatic output is required.
 - Use for discovery, reads, and targeted mutations.
 - Moving children out of a group may delete/alter the group; do not remove stale nodes blindly.
 - Set `layoutSizingHorizontal = "FILL"` only after the node is inside an auto-layout parent.
