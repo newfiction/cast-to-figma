@@ -1,19 +1,20 @@
-![Cast to Figma](https://github.com/newfiction/cast-to-figma/releases/download/assets/cast-cover.png)
+![Cast to Figma](https://github.com/newfiction/cast-to-figma/releases/download/assets/cast-cover.png?v=20260715)
 
 # Cast to Figma
 
 Local CLI, bridge, and agent skill for controlling Figma through the [Cast Figma plugin](https://www.figma.com/community/plugin/1398410342518853126).
 
-### Cast lets AI agents inspect, generate, and edit designs using the context of your actual Figma file: including your edits, naming patterns, layout habits, and file-specific conventions.
+### Agentic collaborator that watches how you work and can inspect, generate, and edit designs — based on your actual working style.
 
 
-**File skill.** Cast helps to build a file-local skill as you work. When you correct an agent’s output, those corrections become reusable learning guidance for future edits in the same file.
+**Collaborate in real-time** _("Cowork")_
+Cast works alongside you. It watches as you design, waits for you to pause, then picks up the thread. No prompt-writing handoff ritual (“now do this”) after every step.
 
-**Shorter prompts.** Agents remember recent file activity, so you can ask for changes without re-explaining the full design context every time.
+**Turn corrections into skills**
+When you fix Cast's work, it captures what changed and turns your edits into reusable, file-local skills. No re-explaining over and over again.
 
-**Real-time coworking.** Keep designing while the agent helps in the background: rename layers, assign tokens, clean up structure, adapt repeated elements, or apply feedback across the file.
-
-**File tools.** Create procedural tools for the file: generate graphics, apply tokens, batch-edit layouts, adapt designs, and automate repeated tasks without running expensive inference for every single operation.
+**Call the token police**
+Cast remembers your design system, so it can catch raw values and off-system styles as you work — then swaps them for the right tokens automatically. No more manual audits.
 
 ## Install
 
@@ -58,6 +59,8 @@ The CLI auto-starts a local bridge on `127.0.0.1:7777`. Human output includes co
 CAST_BRIDGE_PORT=7778 cast-to-figma status
 ```
 
+![Real-time coworking loop](https://github.com/newfiction/cast-to-figma/releases/download/assets/coworking-loop.png?v=20260715)
+
 ## Commands
 
 - `status` — check bridge/plugin connection
@@ -90,6 +93,8 @@ cast-to-figma help
 
 ## Memory
 
+![Short-term memory](https://github.com/newfiction/cast-to-figma/releases/download/assets/short-term-memory.png?v=20260715)
+
 Cast memory is file-local and hyperlink-style:
 
 - `user.nodes` — recent native Figma node IDs edited by the designer.
@@ -113,7 +118,7 @@ Common node-edit tools resolve targets as `nodeId → current selection → rece
 
 ## Agent skill
 
-![Scheme](https://github.com/newfiction/cast-to-figma/releases/download/assets/cast-scheme.png)
+![Supervision loop](https://github.com/newfiction/cast-to-figma/releases/download/assets/supervison-loop.png?v=20260715)
 
 *The installed skill instructs agents to*:
 - inspect selected nodes and screenshots before visual edits
