@@ -7,14 +7,11 @@ Local CLI, bridge, and agent skill for controlling Figma through the [Cast Figma
 ### Agentic collaborator that watches how you work and can inspect, generate, and edit designs — based on your actual working style.
 
 
-**Collaborate in real-time** _("Cowork")_
-Cast works alongside you. It watches as you design, waits for you to pause, then picks up the thread. No prompt-writing handoff ritual (“now do this”) after every step.
+**Collaborate in real-time** _("Cowork")_<br>Cast works alongside you. It watches as you design, waits for you to pause, then picks up the thread. No prompt-writing handoff ritual (“now do this”) after every step.
 
-**Turn corrections into skills**
-When you fix Cast's work, it captures what changed and turns your edits into reusable, file-local skills. No re-explaining over and over again.
+**Turn corrections into skills**<br>When you fix Cast's work, it captures what changed and turns your edits into reusable, file-local skills. No re-explaining over and over again.
 
-**Call the token police**
-Cast remembers your design system, so it can catch raw values and off-system styles as you work — then swaps them for the right tokens automatically. No more manual audits.
+**Call the token police**<br>Cast remembers your design system, so it can catch raw values and off-system styles as you work — then swaps them for the right tokens automatically. No more manual audits.
 
 ## Install
 
