@@ -126,6 +126,10 @@ Common node-edit tools resolve targets as `nodeId → current selection → rece
 - learn from designer corrections
 - start coworking for designer change cycles after completing work
 
+## Author
+
+[slitrobo](https://github.com/slitrobo)
+
 ## License
 
 MIT
