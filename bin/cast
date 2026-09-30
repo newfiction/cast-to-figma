@@ -20,6 +20,8 @@ const TOOL_LABELS = {
     'list-pages': 'Listed pages',
     'get-skill': 'Read file skill',
     'update-skill': 'Updated file skill',
+    'get-global-instructions': 'Read global instructions',
+    'set-global-instructions': 'Set global instructions',
     'get-memory': 'Read memory',
     'clear-memory': 'Cleared memory',
     'clear-chat': 'Cleared chat',
@@ -85,6 +87,8 @@ const COMMANDS = new Map([
   ['list-pages', 'list-pages'],
   ['get-skill', 'get-skill'],
   ['update-skill', 'update-skill'],
+  ['get-global-instructions', 'get-global-instructions'],
+  ['set-global-instructions', 'set-global-instructions'],
   ['get-memory', 'get-memory'],
   ['clear-memory', 'clear-memory'],
   ['clear-chat', 'clear-chat'],
@@ -140,6 +144,8 @@ Usage examples:
   cast-to-figma set-styles --data JSON
   cast-to-figma get-components [--query TEXT] [--page-id ID] [--all-pages] [--details]
   cast-to-figma get-skill
+  cast-to-figma get-global-instructions
+  cast-to-figma set-global-instructions [--instructions TEXT | --instructions-file FILE]
   cast-to-figma get-memory [--limit N] [--source user|agent|all] [--node-id ID] [--trait-id ID] [--event-id ID] [--detail]
   cast-to-figma clear-agent-corrections
   cast-to-figma update-skill --skill-md-file FILE
@@ -153,7 +159,7 @@ Usage examples:
   cast-to-figma clone-node --node-id ID [--parent-id ID] [--x N] [--y N]
   cast-to-figma clone-layout --from-node-id ID --to-node-id ID
   cast-to-figma clone-traits --to-node-id ID [--from-node-id ID] [--traits fills,typography] [--trait-id ID]
-  cast-to-figma exec --tool TOOL [--data JSON]
+  cast-to-figma exec --tool TOOL [--data JSON | --data-file FILE]
   cast-to-figma cowork [--instruction TEXT] [--timeout 600] [--wait 3] [--target NODE_ID] [--json] [--agent ID]
   cast-to-figma install-cli-skill --folder {agent_skill_folder}
   cast-to-figma update [--check]
@@ -331,8 +337,12 @@ function installCliSkill(opts) {
 
 /** Converts CLI options to Cast tool data. */
 function buildData(tool, opts) {
-  if (tool === 'exec') return { tool: opts.tool, data: opts.data ? JSON.parse(opts.data) : {} };
-  if (opts.data) return JSON.parse(opts.data);
+  if (opts.data && opts['data-file']) throw new Error('use either --data or --data-file, not both');
+  const rawData = opts['data-file']
+    ? fs.readFileSync(path.resolve(expandHome(opts['data-file'])), 'utf8')
+    : opts.data;
+  if (tool === 'exec') return { tool: opts.tool, data: rawData ? JSON.parse(rawData) : {} };
+  if (rawData) return JSON.parse(rawData);
   const data = {};
   if (opts['node-id']) data.nodeId = opts['node-id'];
   if (opts['from-node-id']) data.fromNodeId = opts['from-node-id'];
@@ -393,6 +403,11 @@ function buildData(tool, opts) {
   if (opts['sample-limit']) data.sampleLimit = Number(opts['sample-limit']);
   if (opts['skill-md']) data.skillMd = opts['skill-md'];
   if (opts['skill-md-file']) data.skillMd = fs.readFileSync(opts['skill-md-file'], 'utf8');
+  if (opts.instructions !== undefined && opts['instructions-file']) {
+    throw new Error('use either --instructions or --instructions-file, not both');
+  }
+  if (opts.instructions !== undefined) data.instructions = String(opts.instructions);
+  if (opts['instructions-file']) data.instructions = fs.readFileSync(opts['instructions-file'], 'utf8');
   return data;
 }
 
@@ -614,4 +629,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { COMMANDS, formatHumanValue, humanDataLines };
+module.exports = { COMMANDS, buildData, formatHumanValue, humanDataLines };

@@ -21,7 +21,7 @@ cast-to-figma inspect --depth 3 --scale 1
 CAST_BRIDGE_PORT=7778 cast-to-figma status
 ```
 
-The CLI auto-starts the local bridge when needed. The bridge defaults to port `7777`; override it with `CAST_BRIDGE_PORT`.
+The CLI auto-starts the local bridge when needed. The bridge defaults to port `7777`; override it with `CAST_BRIDGE_PORT`. For large baked-tool payloads such as generated variable matrices and SVG identity sources, use `exec --data-file payload.json` instead of an inline `--data` argument.
 
 Pass `--agent <agent-id>` when useful so the Cast panel can show which harness is driving Figma. Suggested ids include `pi`, `openai`, `gpt`, `claude`, and `gemini`.
 
@@ -32,7 +32,7 @@ Use `--json` for reads and scripts whenever exact, machine-readable values matte
 Use this workflow for every Cast design task:
 
 1. **Read file context**
-   - Run `get-skill`, `get-memory`, `get-design-system` and `get-user-tools`.
+   - Run `get-global-instructions`, `get-skill`, `get-memory`, `get-design-system` and `get-user-tools`. Global instructions are personal and plugin-scoped across Figma files; the file skill remains local to the open Figma file.
    - If the user says “this”, “that”, “these”, “here”, “selected”, “current”, or “what I changed”, run default `inspect` before planning. It resolves `nodeUrl` → `nodeId` → current selection → recent user-memory edited nodes.
    - Target selected/recently edited frames first. If no selection exists, use the nodes from the memory digest. Do not search the whole file unless needed or asked.
    - If recalled correction summaries exist, treat them as background unless the user asks to learn ("Learn") from or clear them.
@@ -55,6 +55,7 @@ Use this workflow for every Cast design task:
    - Continue only after the current step passes visual verification.
    - After finishing any task or task bundle, analyze the workflow and decide whether any reusable process, correction, or file-specific pattern could improve the file skill.
    - Ask the user if they want to add that learning before calling `update-skill`; never update the skill automatically.
+   - Call `set-global-instructions` only when the user explicitly requests changing their personal global instructions. Never infer or promote reusable learning into global instructions.
    - After the task is done, start coworking unless the user asked not to.
 
 ## Coworking
@@ -108,6 +109,23 @@ Writes file-local skill markdown to Cast shared plugin data: namespace `cast`, k
 
 ```bash
 cast-to-figma update-skill --agent <agent-id> --skill-md-file /path/to/skill.md
+```
+
+### get-global-instructions
+
+Reads personal global instruction Markdown from Figma `clientStorage`. The value is plugin-scoped for the current user and applies across Figma files; it is not embedded in the open file or shared with collaborators.
+
+```bash
+cast-to-figma get-global-instructions --agent <agent-id>
+```
+
+### set-global-instructions
+
+Fully replaces personal global instruction Markdown. Call this tool only when the user explicitly requests changing global instructions. Pass an empty string to clear the value.
+
+```bash
+cast-to-figma set-global-instructions --agent <agent-id> --instructions-file /path/to/AGENTS.md
+cast-to-figma set-global-instructions --agent <agent-id> --instructions ""
 ```
 
 ### inspect
@@ -380,6 +398,7 @@ Notes:
 - `--reason` is required and appears in the Cast UI feed instead of a generic “Ran script” row. Write it as a concise completed activity: max 6 words and 64 characters, e.g. `"Created 10 frames"`.
 - Prefer `--source-file` for multiline scripts, quote-heavy code, JSON literals, template strings, or any script longer than a one-liner. This avoids shell interpolation/quoting failures; write the JavaScript to `/tmp/...js` and pass the file path.
 - `await` works inside `source` / `--source-file`.
+- Every mutating script must return `{ affectedNodeIds: [...] }` with the smallest changed root nodes. Do not return every descendant; Cast uses these roots to attribute agent edits without swallowing concurrent designer edits.
 - Return plain JSON data, not live node proxies. Add `--json` when exact programmatic output is required.
 - Use for discovery, reads, and targeted mutations.
 - Moving children out of a group may delete/alter the group; do not remove stale nodes blindly.
@@ -404,8 +423,8 @@ Memory is structured as:
 - `user.nodes`: recent native Figma node IDs edited by the designer.
 - `user.traits`: before → after property changes, e.g. fill, type, spacing, layout.
 - `user.events`: full edit moments containing snapshots and linked trait IDs.
-- `agent.nodes`: agent-touched nodes awaiting feedback.
-- `agent.corrections`: designer corrections to agent-touched nodes.
+- `agent.nodes`: compact agent-touched roots awaiting feedback.
+- `agent.corrections`: designer corrections to agent-touched nodes. Corrections are `active` while the design differs from the agent baseline and become `reverted` when the user returns fully to that baseline; reverted history is excluded from automatic recall.
 
 **Digest format.** Compact memory returns one short, intentful line per change, with display times like `7:23PM`:
 
@@ -460,6 +479,6 @@ Memory has three user layers:
 
 Tool responses may include a compact `recall` envelope with memory and correction summaries only. Use `get-memory --detail` with a `nodeId`, `traitId`, or `eventId` to inspect full linked memory details.
 
-The file skill is also stored in Cast shared plugin data: namespace `cast`, key `skill`. Both shared keys keep legacy private plugin-data fallbacks for older files.
+Personal global instructions are stored as one plain Markdown string in Figma `clientStorage`, scoped to the current user and Cast plugin across Figma files. The file skill is stored separately in Cast shared plugin data: namespace `cast`, key `skill`, and remains local to the open file. Both file-local shared keys keep legacy private plugin-data fallbacks for older files.
 
-Agent edits are tracked separately as agent memory. `get-memory --source agent` exposes them as `agent.nodes` and `agent.corrections`; default `get-memory` remains user/designer memory.
+Agent edits are tracked separately as agent memory. Actions, tracked root baselines, and correction history use independently byte-bounded plugin-data stores, so verbose historical corrections cannot evict the baselines required for new correction detection. Legacy combined agent memory migrates on the next write. `get-memory --source agent` exposes `agent.nodes` and `agent.corrections`; default `get-memory` remains user/designer memory. If a root baseline is absent, correction attribution falls back to recent action ancestry and the document-change before/after snapshots.

@@ -1,4 +1,4 @@
-![Cast to Figma](https://github.com/newfiction/cast-to-figma/releases/download/assets/cast-cover.png?v=20260715)
+![Cast to Figma](./assets/cast-cover.png)
 
 # Cast to Figma
 
@@ -56,7 +56,7 @@ The CLI auto-starts a local bridge on `127.0.0.1:7777`. Human output includes co
 CAST_BRIDGE_PORT=7778 cast-to-figma status
 ```
 
-![Real-time coworking loop](https://github.com/newfiction/cast-to-figma/releases/download/assets/coworking-loop.png?v=20260715)
+![Real-time coworking loop](./assets/coworking-loop.png)
 
 ## Commands
 
@@ -69,6 +69,7 @@ CAST_BRIDGE_PORT=7778 cast-to-figma status
 - `get-components` — list local components/component sets with lean summaries and optional drill-down filters
 - `list-pages` — list open file pages
 - `get-skill`, `update-skill` — read/write file-local agent skill markdown
+- `get-global-instructions`, `set-global-instructions` — read/replace personal plugin-scoped instructions used across Figma files
 - `get-memory`, `clear-memory` — read/clear hyperlink-style file-local Cast memory
 - `clear-agent-corrections` — clear pending agent correction summaries
 - `update-properties`, `resize-node`, `update-fills`, `update-text`, `set-layout` — edit existing nodes
@@ -90,7 +91,7 @@ cast-to-figma help
 
 ## Memory
 
-![Short-term memory](https://github.com/newfiction/cast-to-figma/releases/download/assets/short-term-memory.png?v=20260715)
+![Short-term memory](./assets/short-term-memory.png)
 
 Cast memory is file-local and hyperlink-style:
 
@@ -115,14 +116,15 @@ Common node-edit tools resolve targets as `nodeId → current selection → rece
 
 ## Agent skill
 
-![Supervision loop](https://github.com/newfiction/cast-to-figma/releases/download/assets/supervison-loop.png?v=20260715)
+![Supervision loop](./assets/supervison-loop.png)
 
 *The installed skill instructs agents to*:
 - inspect selected nodes and screenshots before visual edits
-- read file-local skill, hyperlink memory, user tools, and agent-memory context
+- read personal global instructions plus file-local skill, hyperlink memory, user tools, and agent-memory context
 - make small, verifiable design changes
 - use wrapped Cast tools before raw scripts; raw scripts require a ≤6-word reason label
 - ask before adding reusable workflow learnings to the file skill
+- change personal global instructions only when explicitly requested
 - learn from designer corrections
 - start coworking for designer change cycles after completing work
 

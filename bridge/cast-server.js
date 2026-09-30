@@ -22,6 +22,18 @@ let nextId = 1;
 const pending = new Map();
 const eventQueue = [];
 const MAX_EVENTS = 100;
+const MUTATION_TOOLS = new Set([
+  'set-variables', 'set-styles', 'run-script', 'create-modules-design-variables',
+  'create-modules-design-text-styles', 'create-modules-design-module',
+  'create-modules-design-identity', 'create-modules-design-layout',
+  'reflow-modules-design-baselines', 'create-modular-layouts-variables',
+  'create-modular-layouts-text-styles', 'create-modular-layouts-module',
+  'reflow-modular-layouts-baselines', 'create-node', 'delete-node',
+  'update-properties', 'resize-node', 'update-fills', 'update-text', 'set-layout',
+  'move-node', 'clone-node', 'clone-layout', 'clone-traits', 'undo', 'run-user-tool',
+  'set-global-instructions',
+]);
+let mutationDispatchTail = Promise.resolve();
 let httpServer = null;
 let coworking = false;
 let coworkInstruction;
@@ -86,8 +98,8 @@ function fail(status, summary, hint, error) {
   return { status, summary, hint, error: error ? String(error) : undefined };
 }
 
-/** Executes a Cast tool against the connected Figma plugin. */
-function executeCastTool(request) {
+/** Dispatches one Cast tool against the connected Figma plugin. */
+function dispatchCastTool(request) {
   const tool = request && request.tool;
   if (!tool || typeof tool !== 'string') {
     return Promise.reject(fail('invalid_request', 'Cast tool name is required', undefined, 'Missing tool'));
@@ -114,6 +126,18 @@ function executeCastTool(request) {
     pending.set(id, { resolve, reject, timer, tool });
     send(activePluginSocket, payload);
   });
+}
+
+/** Executes reads immediately while serializing external canvas mutations before timeout starts. */
+function executeCastTool(request) {
+  const tool = request && request.tool;
+  if (!MUTATION_TOOLS.has(tool)) return dispatchCastTool(request);
+  const result = mutationDispatchTail.then(
+    () => dispatchCastTool(request),
+    () => dispatchCastTool(request),
+  );
+  mutationDispatchTail = result.then(() => undefined, () => undefined);
+  return result;
 }
 
 /** Queues an asynchronous plugin event for polling clients. */
