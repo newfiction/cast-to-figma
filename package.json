@@ -1,16 +1,16 @@
 {
-  "name": "@newfiction/cast-to-figma",
+  "name": "@slitrobo/cast-to-figma",
   "version": "0.2.2",
   "description": "Local CLI, bridge, and agent skill for controlling Figma through the Cast plugin.",
   "author": "slitrobo",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/newfiction/cast-to-figma.git"
+    "url": "git+https://github.com/slitrobo/cast-to-figma.git"
   },
-  "homepage": "https://github.com/newfiction/cast-to-figma#readme",
+  "homepage": "https://github.com/slitrobo/cast-to-figma#readme",
   "bugs": {
-    "url": "https://github.com/newfiction/cast-to-figma/issues"
+    "url": "https://github.com/slitrobo/cast-to-figma/issues"
   },
   "bin": {
     "cast-to-figma": "./bin/cast"

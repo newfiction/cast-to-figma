@@ -22,7 +22,7 @@ Install and open the [Cast plugin](https://www.figma.com/community/plugin/139841
 ### 2. Install the CLI & skill
 
 ```bash
-npm install -g github:newfiction/cast-to-figma
+npm install -g github:slitrobo/cast-to-figma
 cast-to-figma install-cli-skill --folder {agent_skill_folder}
 ```
 

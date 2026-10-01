@@ -3,7 +3,7 @@ name: cast-to-figma
 description: Use Cast to execute Figma tools through a local bridge.
 version: 0.2.2
 requiresCli: ">=0.2.2"
-cliPackage: "@newfiction/cast-to-figma"
+cliPackage: "@slitrobo/cast-to-figma"
 cliBinary: "cast-to-figma"
 ---
 
